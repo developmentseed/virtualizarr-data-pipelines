@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+import icechunk
 from icechunk import Repository
 
 
@@ -24,7 +26,7 @@ class VirtualizarrProcessor(Protocol):
         """
         ...
 
-    def append(self, file_key: str, repo: Repository) -> str:
+    def append(self, file_key: str) -> str:
         """
         Uses a Virtualizarr parser to parse the file, manipulate the resulting
         ManifestStore and append the results along a dimension.
@@ -40,16 +42,17 @@ class VirtualizarrProcessor(Protocol):
         """
         ...
 
-    def garbage_collect(self, repo: Repository) -> None:
+    def garbage_collect(self, expiry_time: datetime) -> icechunk.GCSummary:
         """
         Run Icechunk garbage collection and snapshot removal.
 
         Parameters
         ----------
             repo: And Icechunk Repository.
+            expiry_time: Remove snapshots older than this time.
         Returns
         -------
-            None
+        GCSummary
         """
         ...
 
