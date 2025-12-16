@@ -26,15 +26,15 @@ class VirtualizarrProcessor(Protocol):
         """
         ...
 
-    def append(self, file_key: str) -> str:
+    def process_file(self, file_key: str) -> str:
         """
         Uses a Virtualizarr parser to parse the file, manipulate the resulting
-        ManifestStore and append the results along a dimension.
+        ManifestStore and add it to the Icechunk store
 
         Parameters
         ----------
             file_key: The full key path to the source file.
-            repo: The Icechunk Repository for file appending.
+            repo: The Icechunk Repository to add the file to.
         Returns
         -------
         str

@@ -91,12 +91,12 @@ class VirtualizarrSqsStack(Stack):
                 )
             )
 
-        self.append_lambda = _lambda.DockerImageFunction(
+        self.process_file_lambda = _lambda.DockerImageFunction(
             self,
-            f"{settings.STACK_NAME}-append_lambda",
+            f"{settings.STACK_NAME}-process_file_lambda",
             code=_lambda.DockerImageCode.from_image_asset(
                 directory="lambda",
-                file="append/Dockerfile",
+                file="process_file/Dockerfile",
                 platform=ecr_assets.Platform.LINUX_AMD64,  # or LINUX_AMD64
             ),
             architecture=_lambda.Architecture.X86_64,
@@ -107,10 +107,10 @@ class VirtualizarrSqsStack(Stack):
             },
         )
 
-        self.queue.grant_consume_messages(self.append_lambda)
+        self.queue.grant_consume_messages(self.process_file_lambda)
 
         # Grant Lambda permissions to read from S3 (for processing HRRR files)
-        self.append_lambda.add_to_role_policy(
+        self.process_file_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
                     "s3:GetObject",
@@ -124,9 +124,9 @@ class VirtualizarrSqsStack(Stack):
         )
 
         # Grant Lambda permissions to write to the icechunk S3 bucket
-        self.icechunk_bucket.grant_read_write(self.append_lambda)
+        self.icechunk_bucket.grant_read_write(self.process_file_lambda)
 
-        self.append_lambda.add_event_source(
+        self.process_file_lambda.add_event_source(
             lambda_event_sources.SqsEventSource(
                 self.queue,
                 batch_size=10,

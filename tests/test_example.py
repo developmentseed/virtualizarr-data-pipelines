@@ -21,9 +21,9 @@ def test_initialize_store() -> None:
     assert isinstance(result, Repository)
 
 
-def test_append() -> None:
+def test_process_file() -> None:
     processor = Processor()
-    snapshot = processor.append(file_key="2024-01-02")
+    snapshot = processor.process_file(file_key="2024-01-02")
     assert isinstance(snapshot, str)
 
 

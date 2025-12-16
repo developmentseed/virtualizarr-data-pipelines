@@ -66,8 +66,8 @@ def process_notification(message: Dict[str, Any]) -> None:
             extra={"bucket": bucket, "key": key, "s3_uri": s3_uri},
         )
         virtualizarr_processor = Processor()
-        virtualizarr_processor.append(file_key=s3_uri)
-        logger.info(f"{s3_uri} successfully appended")
+        virtualizarr_processor.process_file(file_key=s3_uri)
+        logger.info(f"{s3_uri} successfully processed")
 
 
 @logger.inject_lambda_context()

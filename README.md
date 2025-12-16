@@ -20,9 +20,9 @@ file.  Your class should follow the [VirtualizarrProcessor protocol](./lambda/vi
 - **initialize_store** This method should create your new Icechunk store and use a
   seed file to initialize the structure that you can append subsequent files to.
 
-- **append** This method should take a file uri, use a Virtualizarr parser to
-    parse it and append the resulting ManifestStore or virtual dataset to the
-    Icechunk store along some dimension or dimensions.
+- **parse_file** This method should take a file uri, use a Virtualizarr parser to
+    parse it and add the resulting ManifestStore or virtual dataset to the
+    Icechunk store.
 
 You can specify the dependencies for your processor module in its [pyproject.toml](./lambda/virtualizarr-processor/pyproject.toml).
 

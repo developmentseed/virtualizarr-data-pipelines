@@ -82,7 +82,7 @@ class Processor:
             session.commit(message="Initialization")
         return repo
 
-    def append(self, file_key: str) -> str:
+    def process_file(self, file_key: str) -> str:
         repo = self.initialize_store()
         session = repo.writable_session("main")
         vds = synthetic_vds(file_key)
