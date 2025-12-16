@@ -20,7 +20,7 @@ file.  Your class should follow the [VirtualizarrProcessor protocol](./lambda/vi
 - **initialize_store** This method should create your new Icechunk store and use a
   seed file to initialize the structure that you can append subsequent files to.
 
-- **parse_file** This method should take a file uri, use a Virtualizarr parser to
+- **process_file** This method should take a file uri, use a Virtualizarr parser to
     parse it and add the resulting ManifestStore or virtual dataset to the
     Icechunk store.
 
