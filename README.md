@@ -12,7 +12,7 @@ First [create your own repository from the
 template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template). You'll use this repository to build and configure your own dataset specific pipeline.
 
 #### Creating a processor :package:
-Once you have your own repo, the first step is building your own processor class. There is a sample
+Once you have your own repo, the first step is building your own processor module. There is a sample
 [processor.py](./lambda/virtualizarr-processor/virtualizarr_processor/processor.py) in the repo that uses an in-memory Icechunk store and a fake virtual dataset to
 demonstrate how a processor works.  Replace this with your own `processor.py`
 file.  Your class should follow the [VirtualizarrProcessor protocol](./lambda/virtualizarr-processor/virtualizarr_processor/typing.py).
@@ -28,7 +28,7 @@ You can specify the dependencies for your processor module in its [pyproject.tom
 
 You should create tests for your module in the [tests](./tests) directory. There are sample fixtures for an in memory Icechunk store and some basic sample tests for the sample processor module in the template repo that you can use as a guide.
 
-The virtualizarr-data-pipelines CDK infrastructure will use this module to create a Docker images and Lambda functions for initializing the Icechunk store and consuming SQS messages for files and appending them to the store.
+The Virtualizarr Data Pipelines CDK infrastructure will use this module to create a Docker images and Lambda functions for initializing the Icechunk store and consuming SQS messages for files and appending them to the store.
 
 ### Feeding the queue :cookie:
 Virtualizarr Data Pipelines is only responsible for creating a store and processing file notifications fed to its queue.  You'll be responsible for getting messages in this queue.  For existing archival data in S3 the simplest approach is enabling S3 inventories on the bucket and using [Athena to query the inventories](https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-inventory-athena-query.html) and push messages onto the queue in batches of a manageable size.
