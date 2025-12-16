@@ -31,7 +31,8 @@ def icechunk_repo() -> icechunk.Repository:
     return repo
 
 
-def synthetic_vds(date: str) -> xr.Dataset:
+@pytest.fixture(scope="function")
+def fake_vds(date: str) -> xr.Dataset:
     filepath = f"{CHUNK_DIR}/data_chunk"
     store = obstore.store.LocalStore()
     arr = np.repeat([[1, 2]], 3, axis=1)

@@ -1,5 +1,5 @@
 [project]
-name = "virtualizarr_data_pipelines"
+name = "virtualizarr-data-pipelines"
 version = "0.1.0"
 description = "Virtualizarr/Icechunk ingestion infrastructure"
 authors = [{name = "Sean Harkins", email = "sean@developmentseed.org"}]
@@ -10,14 +10,15 @@ dependencies = [
     "constructs>=10.0.0",
 ]
 
-[tool.uv.workspace]
-members = ["virtualizarr-processor"]
-
 [tool.uv.sources]
-virtualizarr-processor = { workspace = true }
+virtualizarr-processor = { path = "lambda/virtualizarr-processor", editable = true}
 
 [dependency-groups]
 dev = [
+  "aws-lambda-powertools>=2.30.0",
+  "aws-lambda-typing>=2.20.0",
+  "aws-xray-sdk",
+  "boto3-stubs[batch,s3,sqs]>=0.37.36",
   "mypy",
   "pre-commit",
   "nodeenv",
@@ -30,7 +31,7 @@ dev = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py38"
+target-version = "py311"
 exclude = ["cdk.out", ".venv", "node_modules"]
 
 [tool.ruff.lint]
