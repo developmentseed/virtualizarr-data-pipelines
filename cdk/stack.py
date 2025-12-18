@@ -130,7 +130,6 @@ class VirtualizarrSqsStack(Stack):
             )
         )
 
-        # Grant Lambda permissions to write to the icechunk S3 bucket
         self.icechunk_bucket.grant_read_write(self.process_file_lambda)
 
         self.process_file_lambda.add_event_source(
@@ -138,7 +137,7 @@ class VirtualizarrSqsStack(Stack):
                 self.queue,
                 batch_size=10,
                 report_batch_item_failures=True,
-                max_concurrency=2,
+                max_concurrency=settings.MAX_CONCURRENCY,
             )
         )
 
