@@ -236,7 +236,9 @@ class VirtualizarrSqsStack(Stack):
             self.cron_rule.add_target(
                 targets.BatchJob(
                     job_queue_arn=self.batch_infra.queue.job_queue_arn,
+                    job_queue_scope=self.batch_infra.queue,
                     job_definition_arn=self.gc_job.job_def.job_definition_arn,
+                    job_definition_scope=self.gc_job.job_def,
                     job_name="garbage-collection",
                 )
             )
