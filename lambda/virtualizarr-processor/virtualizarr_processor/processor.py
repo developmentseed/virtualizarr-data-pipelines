@@ -1,6 +1,7 @@
 import os
 import tempfile
 from datetime import datetime
+from itertools import islice
 
 import icechunk
 import numpy as np
@@ -73,9 +74,9 @@ class Processor:
             config=config,
             authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
         )
-        history = repo.ancestry(branch="main")
-        snapshots = list(history)
-        if len(snapshots) == 1:
+        # Get only up to 2 commits to check if the repository is new
+        history = list(islice(repo.ancestry(branch="main"), 2))
+        if len(history) == 1:
             session = repo.writable_session("main")
             vds = synthetic_vds("2024-01-01")
             vds.vz.to_icechunk(session.store, validate_containers=False)
