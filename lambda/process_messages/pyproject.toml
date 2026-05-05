@@ -1,7 +1,7 @@
 [project]
-name = "process-file-lambda"
+name = "process-messages-lambda"
 version = "0.1.0"
-description = "Lambda function to process file notifications"
+description = "Lambda function to process messages"
 requires-python = ">=3.11"
 
 dependencies = [

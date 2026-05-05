@@ -4,17 +4,17 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 import icechunk
-from icechunk import Repository
+from icechunk import Repository, Session
 
 
 @runtime_checkable
 class VirtualizarrProcessor(Protocol):
-    def initialize_store(self) -> Repository:
+    def initialize_repo(self) -> Repository:
         """
-        Initialize an IcechunkStore with the necessary structure and return
+        Initialize an Icechunk Store with the necessary structure and return
         a Repository handle.
 
-        This store should have a dimension that can be used append function.
+        This store should have a dimension that can be used with an append function.
 
         Parameters
         ----------
@@ -22,11 +22,25 @@ class VirtualizarrProcessor(Protocol):
         Returns
         -------
         Repository
-            An Icechunk Repository to be used in by the processor's append function.
+            An Icechunk Repository.
         """
         ...
 
-    def process_file(self, file_key: str) -> str:
+    def initialize_session(self, repo: Repository) -> Session:
+        """
+        Initialize an Icechunk writable Session.
+
+        Parameters
+        ----------
+            repo: An Icechunk Repository.
+        Returns
+        -------
+        Session
+            An Icechunk writable Session.
+        """
+        ...
+
+    def process_file(self, file_key: str, session: Session) -> bool:
         """
         Uses a Virtualizarr parser to parse the file, manipulate the resulting
         ManifestStore and add it to the Icechunk store
@@ -34,7 +48,21 @@ class VirtualizarrProcessor(Protocol):
         Parameters
         ----------
             file_key: The full key path to the source file.
-            repo: The Icechunk Repository to add the file to.
+            session: The Icechunk writable Session to use for adding the file.
+        Returns
+        -------
+        bool
+            True if file was successfully processed.
+        """
+        ...
+
+    def commit_processed_files(self, session: Session) -> str:
+        """
+        Commits the updates made by one or multiple calls to process_file
+
+        Parameters
+        ----------
+            session: The Icechunk writable Session used with process_file.
         Returns
         -------
         str
