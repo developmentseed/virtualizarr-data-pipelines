@@ -51,3 +51,6 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 explicit_package_bases = true
 files = ["lambda", "cdk"]
+
+[tool.pytest.ini_options]
+pythonpath = ["lambda"]

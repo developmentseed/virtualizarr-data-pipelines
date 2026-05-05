@@ -1,5 +1,4 @@
 import json
-from copy import Error
 from typing import Any, Dict
 
 from aws_lambda_powertools import Logger, Tracer
@@ -99,23 +98,21 @@ def handler(event: Any, context: LambdaContext) -> PartialItemFailureResponse:
             raise
 
     # Process each record individually
-    with batch_processor(records=records, handler=record_handler):
-        # This runs after all records have been processed.
-        # If this raises, you control what happens.
-        pass
+    with batch_processor(records=records, handler=record_handler) as batch:
+        batch.process()
 
-        # At this point processor has tracked successes/failures per record.
-        # Now attempt the commit:
-        try:
-            snapshot_id = virtualizarr_processor.commit_processed_files(session=session)
-            logger.info(f"Commited to {snapshot_id}")
-        except Error:
-            logger.error("Commit failed, marking all records as failed")
-            return {
-                "batchItemFailures": [
-                    {"itemIdentifier": record.message_id} for record in records
-                ]
-            }
+    # Now attempt the commit:
+    try:
+        snapshot_id = virtualizarr_processor.commit_processed_files(session=session)
+        logger.info(f"Committed to {snapshot_id}")
+    except Exception:
+        logger.error("Commit failed, marking all records as failed")
+        return {
+            "batchItemFailures": [
+                {"itemIdentifier": record["messageId"]} for record in records
+            ]
+        }
+
     # Commit succeeded — return normal partial failure response
     # (only individually-failed records retry)
     return batch_processor.response()
