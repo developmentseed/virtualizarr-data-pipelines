@@ -38,7 +38,7 @@ def process_notification(
             "Append file",
             extra={"bucket": bucket, "key": key, "s3_uri": s3_uri},
         )
-        processor.process_file(file_key=s3_uri, session=session)
+        processor.process_file(file_key=key, session=session)
         logger.info(f"{s3_uri} successfully processed")
 
 
@@ -100,7 +100,6 @@ def handler(event: Any, context: LambdaContext) -> PartialItemFailureResponse:
     # Process each record individually
     with batch_processor(records=records, handler=record_handler) as batch:
         batch.process()
-
     # Now attempt the commit:
     try:
         snapshot_id = virtualizarr_processor.commit_processed_files(session=session)

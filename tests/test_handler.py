@@ -66,8 +66,8 @@ def test_handler_processes_all_records(MockProcessor: MagicMock) -> None:
     # Verify process_file was called for each record
     assert mock_processor.process_file.call_count == 2
     calls = mock_processor.process_file.call_args_list
-    assert calls[0].kwargs["file_key"] == "s3://test-bucket/2024-01-02"
-    assert calls[1].kwargs["file_key"] == "s3://test-bucket/2024-01-03"
+    assert calls[0].kwargs["file_key"] == "2024-01-02"
+    assert calls[1].kwargs["file_key"] == "2024-01-03"
 
     # Verify commit was called once
     mock_processor.commit_processed_files.assert_called_once_with(session=mock_session)
