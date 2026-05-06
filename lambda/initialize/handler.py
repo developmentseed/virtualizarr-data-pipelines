@@ -13,7 +13,7 @@ tracer = Tracer()
 def handler(event: Any, context: LambdaContext) -> None:
     try:
         virtualizarr_processor = Processor()
-        virtualizarr_processor.initialize_store()
+        virtualizarr_processor.initialize_repo()
         logger.info("Icechunk initialized")
     except Exception as e:
         logger.error(f"Error in custom resource handler: {e}")

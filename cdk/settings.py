@@ -25,6 +25,7 @@ class StackSettings(BaseSettings):
     PROJECT: str = "virtualizarr-data-pipelines"
     SNS_TOPIC: str | None = None
     MAX_CONCURRENCY: int = 50
+    SQS_BATCH_SIZE: int = 10
 
     # Freguency in days to run garbage collection.
     GARBAGE_COLLECTION_FREQUENCY: int | None = None

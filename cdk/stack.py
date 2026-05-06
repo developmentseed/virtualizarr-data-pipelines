@@ -101,12 +101,12 @@ class VirtualizarrSqsStack(Stack):
                 )
             )
 
-        self.process_file_lambda = _lambda.DockerImageFunction(
+        self.process_messages_lambda = _lambda.DockerImageFunction(
             self,
-            f"{settings.STACK_NAME}-process_file_lambda",
+            f"{settings.STACK_NAME}-process_messages_lambda",
             code=_lambda.DockerImageCode.from_image_asset(
                 directory="lambda",
-                file="process_file/Dockerfile",
+                file="process_messages/Dockerfile",
                 platform=ecr_assets.Platform.LINUX_AMD64,  # or LINUX_AMD64
             ),
             architecture=_lambda.Architecture.X86_64,
@@ -114,10 +114,10 @@ class VirtualizarrSqsStack(Stack):
             memory_size=2048,
         )
 
-        self.queue.grant_consume_messages(self.process_file_lambda)
+        self.queue.grant_consume_messages(self.process_messages_lambda)
 
         # Grant Lambda permissions to read from S3 (for processing HRRR files)
-        self.process_file_lambda.add_to_role_policy(
+        self.process_messages_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
                     "s3:GetObject",
@@ -130,12 +130,12 @@ class VirtualizarrSqsStack(Stack):
             )
         )
 
-        self.icechunk_bucket.grant_read_write(self.process_file_lambda)
+        self.icechunk_bucket.grant_read_write(self.process_messages_lambda)
 
-        self.process_file_lambda.add_event_source(
+        self.process_messages_lambda.add_event_source(
             lambda_event_sources.SqsEventSource(
                 self.queue,
-                batch_size=10,
+                batch_size=settings.SQS_BATCH_SIZE,
                 report_batch_item_failures=True,
                 max_concurrency=settings.MAX_CONCURRENCY,
             )

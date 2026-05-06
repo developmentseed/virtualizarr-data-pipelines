@@ -1,5 +1,6 @@
 import os
 import tempfile
+from copy import Error
 from datetime import datetime
 from itertools import islice
 
@@ -7,7 +8,7 @@ import icechunk
 import numpy as np
 import obstore
 import xarray as xr
-from icechunk import Repository
+from icechunk import Repository, Session
 from virtualizarr.manifests import ChunkManifest, ManifestArray
 from zarr.codecs import BytesCodec
 from zarr.core.dtype import parse_data_type
@@ -62,7 +63,7 @@ def synthetic_vds(date: str) -> xr.Dataset:
 
 
 class Processor:
-    def initialize_store(self) -> Repository:
+    def initialize_repo(self) -> Repository:
         chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
         storage = icechunk.in_memory_storage()
         config = icechunk.RepositoryConfig.default()
@@ -83,16 +84,28 @@ class Processor:
             session.commit(message="Initialization")
         return repo
 
-    def process_file(self, file_key: str) -> str:
-        repo = self.initialize_store()
+    def initialize_session(self, repo: Repository) -> Session:
         session = repo.writable_session("main")
-        vds = synthetic_vds(file_key)
-        vds.vz.to_icechunk(session.store, append_dim="time", validate_containers=False)
-        snapshot = session.commit(message=f"Append {file_key}")
+        return session
+
+    def process_file(self, file_key: str, session: Session) -> bool:
+        result = False
+        try:
+            vds = synthetic_vds(file_key)
+            vds.vz.to_icechunk(
+                session.store, append_dim="time", validate_containers=False
+            )
+            result = True
+        except Error:
+            result = False
+        return result
+
+    def commit_processed_files(self, session: Session) -> str:
+        snapshot = session.commit(message=f"Append to {session.snapshot_id}")
         return str(snapshot)
 
     def garbage_collect(self, expiry_time: datetime) -> icechunk.GCSummary:
-        repo = self.initialize_store()
+        repo = self.initialize_repo()
         repo.expire_snapshots(older_than=expiry_time)
         gcs = repo.garbage_collect(delete_object_older_than=expiry_time)
         return gcs

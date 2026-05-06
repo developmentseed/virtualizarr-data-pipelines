@@ -15,23 +15,6 @@ CHUNK_DIR = os.path.realpath(tempfile.gettempdir())
 CHUNK_DIRECTORY_URL_PREFIX = f"file://{CHUNK_DIR}/"
 
 
-@pytest.fixture(scope="function")
-def icechunk_repo() -> icechunk.Repository:
-    chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
-    storage = icechunk.in_memory_storage()
-    config = icechunk.RepositoryConfig.default()
-    config.set_virtual_chunk_container(
-        icechunk.VirtualChunkContainer(CHUNK_DIRECTORY_URL_PREFIX, chunk_store)
-    )
-    repo = icechunk.Repository.open_or_create(
-        storage=storage,
-        config=config,
-        authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
-    )
-    return repo
-
-
-@pytest.fixture(scope="function")
 def fake_vds(date: str) -> xr.Dataset:
     filepath = f"{CHUNK_DIR}/data_chunk"
     store = obstore.store.LocalStore()
@@ -74,3 +57,36 @@ def fake_vds(date: str) -> xr.Dataset:
         },
     )
     return vds
+
+
+def create_repo() -> icechunk.Repository:
+    chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
+    storage = icechunk.in_memory_storage()
+    config = icechunk.RepositoryConfig.default()
+    config.set_virtual_chunk_container(
+        icechunk.VirtualChunkContainer(CHUNK_DIRECTORY_URL_PREFIX, chunk_store)
+    )
+    repo = icechunk.Repository.open_or_create(
+        storage=storage,
+        config=config,
+        authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+    )
+    return repo
+
+
+def create_session() -> icechunk.Session:
+    repo = create_repo()
+    session = repo.writable_session("main")
+    vds = fake_vds("2024-01-01")
+    vds.vz.to_icechunk(session.store, validate_containers=False)
+    return session
+
+
+@pytest.fixture(scope="function")
+def icechunk_repo() -> icechunk.Repository:
+    return create_repo()
+
+
+@pytest.fixture(scope="function")
+def icechunk_session() -> icechunk.Session:
+    return create_session()
