@@ -11,7 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lambda"))
 from process_messages.handler import handler
 
 
-def make_sqs_event(keys: list[str], bucket: str = "test-bucket") -> dict:
+def make_sqs_event(
+    keys: list[str], bucket: str = "test-bucket", mode: str | None = None
+) -> dict:
     """Build a minimal SQS event with S3 notification bodies."""
     records = []
     for i, key in enumerate(keys):
@@ -25,6 +27,8 @@ def make_sqs_event(keys: list[str], bucket: str = "test-bucket") -> dict:
                 }
             ]
         }
+        if mode is not None:
+            body["mode"] = mode
         records.append(
             {
                 "messageId": f"msg-{i:03d}",
@@ -68,6 +72,8 @@ def test_handler_processes_all_records(MockProcessor: MagicMock) -> None:
     calls = mock_processor.process_file.call_args_list
     assert calls[0].kwargs["file_key"] == "2024-01-02"
     assert calls[1].kwargs["file_key"] == "2024-01-03"
+    assert calls[0].kwargs["mode"] == "append"
+    assert calls[1].kwargs["mode"] == "append"
 
     # Verify commit was called once
     mock_processor.commit_processed_files.assert_called_once_with(session=mock_session)
@@ -124,3 +130,25 @@ def test_handler_fails_all_on_commit_error(MockProcessor: MagicMock) -> None:
     failed_ids = [item["itemIdentifier"] for item in response["batchItemFailures"]]
     assert "msg-000" in failed_ids
     assert "msg-001" in failed_ids
+
+
+@patch("process_messages.handler.Processor")
+def test_handler_uses_overwrite_mode_when_present(MockProcessor: MagicMock) -> None:
+    mock_processor = MockProcessor.return_value
+    mock_repo = MagicMock()
+    mock_session = MagicMock()
+    mock_processor.initialize_repo.return_value = mock_repo
+    mock_processor.initialize_session.return_value = mock_session
+    mock_processor.process_file.return_value = True
+    mock_processor.commit_processed_files.return_value = "snapshot-123"
+
+    event = make_sqs_event(["2024-01-02"], mode="overwrite")
+    context = MagicMock()
+
+    response = handler(event, context)
+
+    assert response["batchItemFailures"] == []
+    mock_processor.process_file.assert_called_once()
+    call = mock_processor.process_file.call_args
+    assert call.kwargs["file_key"] == "2024-01-02"
+    assert call.kwargs["mode"] == "overwrite"

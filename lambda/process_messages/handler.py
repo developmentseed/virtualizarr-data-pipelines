@@ -11,10 +11,12 @@ from aws_lambda_powertools.utilities.data_classes import SQSEvent, SQSRecord
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from icechunk import Session
 from virtualizarr_processor.processor import Processor
+from virtualizarr_processor.typing import PROCESS_MODE
 
 logger = Logger()
 tracer = Tracer()
 batch_processor = BatchProcessor(event_type=EventType.SQS)
+DEFAULT_PROCESS_MODE: PROCESS_MODE = "append"
 
 
 @tracer.capture_method
@@ -32,13 +34,14 @@ def process_notification(
     # Extract key information from the message
     bucket = message.get("Records", [{}])[0].get("s3", {}).get("bucket", {}).get("name")
     key = message.get("Records", [{}])[0].get("s3", {}).get("object", {}).get("key")
+    mode = message.get("mode", DEFAULT_PROCESS_MODE)
     if key and bucket:
         s3_uri = f"s3://{bucket}/{key}"
         logger.info(
-            "Append file",
-            extra={"bucket": bucket, "key": key, "s3_uri": s3_uri},
+            "Process file",
+            extra={"bucket": bucket, "key": key, "s3_uri": s3_uri, "mode": mode},
         )
-        processor.process_file(file_key=key, session=session)
+        processor.process_file(file_key=key, session=session, mode=mode)
         logger.info(f"{s3_uri} successfully processed")
 
 
