@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
 import icechunk
 from icechunk import Repository, Session
 
+PROCESS_MODE: TypeAlias = Literal["append", "overwrite"]
 
 @runtime_checkable
 class VirtualizarrProcessor(Protocol):
@@ -40,7 +41,9 @@ class VirtualizarrProcessor(Protocol):
         """
         ...
 
-    def process_file(self, file_key: str, session: Session) -> bool:
+    def process_file(
+        self, file_key: str, session: Session, mode: PROCESS_MODE = "append"
+    ) -> bool:
         """
         Uses a Virtualizarr parser to parse the file, manipulate the resulting
         ManifestStore and add it to the Icechunk store
@@ -49,6 +52,8 @@ class VirtualizarrProcessor(Protocol):
         ----------
             file_key: The full key path to the source file.
             session: The Icechunk writable Session to use for adding the file.
+            mode: The mode to use for processing the file.
+                Can be "append" or "overwrite".
         Returns
         -------
         bool

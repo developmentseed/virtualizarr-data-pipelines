@@ -14,6 +14,8 @@ from zarr.codecs import BytesCodec
 from zarr.core.dtype import parse_data_type
 from zarr.core.metadata import ArrayV3Metadata
 
+from .typing import PROCESS_MODE
+
 CHUNK_DIR = os.path.realpath(tempfile.gettempdir())
 CHUNK_DIRECTORY_URL_PREFIX = f"file://{CHUNK_DIR}/"
 
@@ -88,13 +90,23 @@ class Processor:
         session = repo.writable_session("main")
         return session
 
-    def process_file(self, file_key: str, session: Session) -> bool:
+    def process_file(
+        self, file_key: str, session: Session, mode: PROCESS_MODE = "append"
+    ) -> bool:
         result = False
         try:
             vds = synthetic_vds(file_key)
-            vds.vz.to_icechunk(
-                session.store, append_dim="time", validate_containers=False
-            )
+            match mode:
+                case "overwrite":
+                    vds.vz.to_icechunk(
+                        session.store, region="auto", validate_containers=False
+                    )
+                case "append":
+                    vds.vz.to_icechunk(
+                        session.store, append_dim="time", validate_containers=False
+                    )
+                case _:
+                    raise ValueError(f"Invalid mode: {mode}")
             result = True
         except Error:
             result = False
