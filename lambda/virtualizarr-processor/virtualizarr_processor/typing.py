@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 import icechunk
+import xarray as xr
 from icechunk import Repository, Session
 
 
@@ -53,6 +54,21 @@ class VirtualizarrProcessor(Protocol):
         -------
         bool
             True if file was successfully processed.
+        """
+        ...
+
+    @classmethod
+    def validate_dataset(cls, dataset: xr.Dataset) -> bool:
+        """
+        Validate a parsed virtual dataset before writing it to Icechunk.
+
+        Parameters
+        ----------
+            dataset: The parsed xarray Dataset.
+        Returns
+        -------
+        bool
+            True if the dataset passes validation.
         """
         ...
 

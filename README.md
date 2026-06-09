@@ -25,6 +25,8 @@ file.  Your class should follow the [VirtualizarrProcessor protocol](./lambda/vi
 
 - **process_file** This method should take a file uri and a session and use a  Virtualizarr parser to parse it and add the resulting ManifestStore or virtual dataset to the Icechunk store.
 
+- **validate_dataset** This method should validate the parsed xarray Dataset before writing it to Icechunk and return `True` or `False`. The sample processor uses [Pandera xarray validation](https://pandera.readthedocs.io/en/latest/xarray_guide/) as an example.
+
 - **commit_processed_files** This method commits all the changes made during the
   session in a single commit.
 

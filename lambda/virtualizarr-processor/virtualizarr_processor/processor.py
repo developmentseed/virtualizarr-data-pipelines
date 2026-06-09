@@ -1,6 +1,6 @@
+import logging
 import os
 import tempfile
-from copy import Error
 from datetime import datetime
 from itertools import islice
 
@@ -9,13 +9,27 @@ import numpy as np
 import obstore
 import xarray as xr
 from icechunk import Repository, Session
+from pandera.xarray import Coordinate, DatasetSchema, DataVar
 from virtualizarr.manifests import ChunkManifest, ManifestArray
 from zarr.codecs import BytesCodec
 from zarr.core.dtype import parse_data_type
 from zarr.core.metadata import ArrayV3Metadata
+import pandera as pa
 
 CHUNK_DIR = os.path.realpath(tempfile.gettempdir())
 CHUNK_DIRECTORY_URL_PREFIX = f"file://{CHUNK_DIR}/"
+logger = logging.getLogger(__name__)
+
+
+EXAMPLE_DATASET_SCHEMA = DatasetSchema(
+    data_vars={
+        "foo": DataVar(dtype=np.int64, dims=("y", "x")),
+    },
+    coords={
+        "time": Coordinate(dtype=np.datetime64, dims=("time",)),
+    },
+    strict=True,
+)
 
 
 def synthetic_vds(date: str) -> xr.Dataset:
@@ -80,6 +94,8 @@ class Processor:
         if len(history) == 1:
             session = repo.writable_session("main")
             vds = synthetic_vds("2024-01-01")
+            if not self.validate_dataset(vds):
+                raise ValueError("Dataset validation failed for initialization dataset")
             vds.vz.to_icechunk(session.store, validate_containers=False)
             session.commit(message="Initialization")
         return repo
@@ -92,13 +108,26 @@ class Processor:
         result = False
         try:
             vds = synthetic_vds(file_key)
+            if not self.validate_dataset(vds):
+                return False
             vds.vz.to_icechunk(
                 session.store, append_dim="time", validate_containers=False
             )
             result = True
-        except Error:
+        except Exception:
             result = False
         return result
+
+    @classmethod
+    def validate_dataset(cls, dataset: xr.Dataset) -> bool:
+        try:
+            EXAMPLE_DATASET_SCHEMA.validate(dataset, lazy=True)
+            return True
+        except pa.errors.SchemaErrors as e:
+            logger.exception(
+                "Dataset validation failed:",
+            )
+            return False
 
     def commit_processed_files(self, session: Session) -> str:
         snapshot = session.commit(message=f"Append to {session.snapshot_id}")
