@@ -181,8 +181,7 @@ The spike informs all of these but builds none of them.
 
 ## Deliverable
 
-1. A passing `tests/spike/` suite implementing the model and all four assertions (plus the
-   fallback path if the primary hypothesis fails).
+1. A passing `tests/spike/` suite implementing the model and all four assertions.
 2. A short **findings note** appended to this spec (what worked, the merge-lineage answer,
    gotchas, and a recommended shape for the future `VirtualizarrProcessor` interface change)
    to carry into the real implementation design.
