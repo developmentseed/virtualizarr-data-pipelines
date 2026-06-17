@@ -108,9 +108,13 @@ All new code under `tests/spike/`. **No production code is touched.**
   - `open_repo(path)` — open the repo from `icechunk.local_filesystem_storage(path)` with the
     virtual-chunk-container config + authorization. Used by the coordinator (and by workers only
     if the spike finds a pickled fork cannot resolve storage on its own — see Risks).
-  - `init_backfill_store(repo, n_time)` — create `backfill` branch, create array `foo` at full
-    shape with metadata only, write the shared source chunk bytes to a local file via
-    `obstore`, commit. Returns nothing (state is in the repo).
+  - `init_backfill_store(repo, n_time)` — create `backfill` branch off the `main` tip, then on
+    a `writable_session("backfill")` create array `foo` (metadata only) via
+    `zarr.open_group(session.store).create_array("foo", shape=(N,y,x), chunks=(1,y,x),
+    dtype="int32", serializer=BytesCodec(), compressors=None, filters=None,
+    dimension_names=("time","y","x"))`, write the shared source chunk bytes to a local file via
+    `obstore` (one buffer per time step, value `t`, so chunk `t` lives at byte offset
+    `t * y * x * itemsize`), and commit. (Verified working during design.)
   - `make_forks(session, n_workers, forks_in_dir)` — call `session.fork()` once per worker and
     pickle each fork to `forks_in_dir/worker_{i}.pkl`. Returns the per-worker index subsets.
   - `worker(in_path, indices, location, offset, length, out_path)` — the worker body, run in a
@@ -145,9 +149,14 @@ The spike is a real test, not a demo. Assertions:
    time slices resolves to the expected bytes/values, and no slice is missing/fill-valued.
 3. **Promotion.** After `reset_branch`, `xr.open_zarr` on `main` returns the full `(N, y, x)`
    array, all slices correct.
-4. **Negative control — conflict is detected.** Two forks writing the *same* chunk key, both
-   dropped in the folder, cause `merge()` to raise. This proves disjointness is what makes the
-   happy path pass (not luck), and that merge genuinely detects conflicts.
+4. **Characterization — overlap is NOT detected (last-writer-wins).** Two forks writing
+   *different* content to the *same* chunk key merge and commit **without error**; the chunk
+   ends up with whichever fork was merged last. This was confirmed during design with a scratch
+   run (`merge` takes no conflict solver; icechunk's conflict detection happens during *rebase
+   against a branch tip*, not when merging sibling forks off a shared base). The test asserts
+   this behavior explicitly so the consequence is documented: **disjointness is the
+   partitioner's responsibility — the merge provides no protection.** The real pipeline must
+   guarantee non-overlapping chunk assignments per worker.
 
 ## Risks
 
@@ -157,7 +166,19 @@ pattern. (Workers cannot independently create mergeable forks, since all forks m
 from the single merging session.) So the spike validates a known-supported flow rather than an
 open hypothesis; the remaining unknowns are mechanical and are what the spike confirms.
 
-Things the spike will surface (for the findings note):
+Confirmed during design (scratch run on icechunk 1.1.14 / zarr 3.1.5):
+
+- The full happy-path cycle works: zarr-created full-shape array → coordinator forks → pickle
+  round-trip → `set_virtual_ref` writes → `merge(*forks)` → `commit` → correct per-slice
+  read-back → `reset_branch("main", ...)` promotion.
+- `merge` performs **no overlap/conflict detection** for chunk writes (last-writer-wins) — see
+  verification #4. Disjointness is the partitioner's responsibility.
+- `local_filesystem_storage` logs a warning that it is not safe for *concurrent commits*. The
+  spike only commits from the single coordinator (workers only `set_virtual_ref` on forks and
+  never commit), so this does not apply — but the real S3 deployment should use an object store
+  regardless.
+
+Still to confirm in the spike proper (for the findings note):
 
 - Whether a coordinator-made `ForkSession` round-trips through pickle intact across a
   `spawn`ed process, gets `set_virtual_ref` writes applied, pickles back, and merges into the
