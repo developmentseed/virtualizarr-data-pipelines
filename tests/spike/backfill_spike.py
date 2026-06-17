@@ -8,6 +8,9 @@ import os
 
 import icechunk
 import numpy as np
+import obstore
+import zarr
+from zarr.codecs import BytesCodec
 
 # Synthetic array: N time steps, each a (Y, X) int32 chunk. One chunk per time step.
 N, Y, X = 6, 2, 3
@@ -50,3 +53,29 @@ def open_repo(work: str) -> icechunk.Repository:
         config=config,
         authorize_virtual_chunk_access={_url_prefix(work): None},
     )
+
+
+def write_source(work: str) -> None:
+    """Write one source file holding N back-to-back chunk buffers; chunk t is filled
+    with the value t, so chunk t lives at byte offset t * CHUNK_NBYTES."""
+    buf = b"".join(np.full((Y, X), t, dtype=DTYPE).tobytes() for t in range(N))
+    obstore.put(obstore.store.LocalStore(), _source_path(work), buf)
+
+
+def init_backfill_store(repo: icechunk.Repository, work: str) -> None:
+    """Create the `backfill` branch off main and the full-shape `foo` array
+    (metadata only — no chunks written yet)."""
+    repo.create_branch("backfill", repo.lookup_branch("main"))
+    session = repo.writable_session("backfill")
+    root = zarr.open_group(session.store, mode="a")
+    root.create_array(
+        "foo",
+        shape=(N, Y, X),
+        chunks=(1, Y, X),
+        dtype=DTYPE,
+        serializer=BytesCodec(),
+        compressors=None,
+        filters=None,
+        dimension_names=("time", "y", "x"),
+    )
+    session.commit("Initialize backfill shape")
