@@ -35,9 +35,10 @@ findings note that informs the real implementation design.
 - `Session.fork()` → `ForkSession`; `Session.merge(*forks)`; `Session.commit(...)`. This is
   icechunk's documented distributed-write API.
 - `ForkSession` is itself forkable (`ForkSession.fork()`) and mergeable.
-- The icechunk docs describe the **coordinator** creating all forks from one
-  `writable_session` and pickling them to workers. Whether workers can *independently* create
-  their own forks and still merge is the central open question (see Risks).
+- The icechunk docs describe — and this spike follows — the **coordinator** creating all forks
+  from one `writable_session` and pickling them to workers. All forks must descend from the
+  single session that later performs the merge; independently-created sessions cannot be merged
+  together.
 - **VirtualiZarr `to_icechunk` only supports `append_dim`, not `region`.** Appends mutate array
   shape and would conflict across forks, so we cannot use it for disjoint writes.
 - **`IcechunkStore.set_virtual_ref(key, location, *, offset, length, ...)`** (and batch
@@ -56,10 +57,12 @@ findings note that informs the real implementation design.
   plain real-data region writes first.
 - **Workers only — no partition concept in the spike.** A worker gets a disjoint subset of
   chunk indices (the real pipeline will size these via `MaxItemsPerBatch`).
-- **Each worker creates its own fork** and pickles the result to a shared folder. The
-  coordinator does init up front, then merge + commit once all workers finish. The reducer
-  **discovers forks by listing the folder** (mirrors a reducer listing an S3 prefix), not via
-  return values.
+- **The coordinator creates all forks** (one per worker) from a single `writable_session`,
+  pickles each out to its worker, and holds that session in memory. Each worker writes its
+  subset into its fork and pickles the fork back to a shared folder. Once all workers finish,
+  the coordinator merges the returned forks into the same session and commits once. The reducer
+  **discovers the returned forks by listing the folder** (mirrors a reducer listing an S3
+  prefix), not via return values.
 - **Include `main` promotion** via `reset_branch`.
 
 ## Model
@@ -74,21 +77,23 @@ init_backfill_store(repo, N)
   write source chunk bytes to local file
   commit "Initialize backfill shape"
   │
-  ├── split N chunk indices into W subsets
-  ├── launch W worker processes ───────────►   open_repo(path)
-  │                                            session = repo.writable_session("backfill")
-  │                                            fork = session.fork()
+  session = repo.writable_session("backfill")   ← held in memory through the run
+  split N chunk indices into W subsets
+  for i in range(W):
+    fork_i = session.fork()
+    pickle.dump(fork_i, forks_in/worker_{i}.pkl)
+  │
+  ├── launch W worker processes ───────────►   fork = pickle.load(forks_in/worker_{i}.pkl)
   │                                            for t in subset:
   │                                              fork.store.set_virtual_ref(
   │                                                f"foo/c/{t}/0/0", location,
   │                                                offset=..., length=...,
   │                                                validate_container=False)
-  │                                            pickle.dump(fork, forks/worker_{i}.pkl)
+  │                                            pickle.dump(fork, forks_out/worker_{i}.pkl)
   │ wait for all workers
   ▼
-  session = repo.writable_session("backfill")
-  forks = [pickle.load(p) for p in list(forks/)]   ← discovery by folder listing
-  session.merge(*forks)
+  forks = [pickle.load(p) for p in list(forks_out/)]   ← discovery by folder listing
+  session.merge(*forks)                                 ← same session that created the forks
   session.commit("Backfill commit")
   │
   ▼
@@ -101,15 +106,20 @@ All new code under `tests/spike/`. **No production code is touched.**
 
 - **`tests/spike/backfill_spike.py`** — helpers:
   - `open_repo(path)` — open the repo from `icechunk.local_filesystem_storage(path)` with the
-    virtual-chunk-container config + authorization (shared by coordinator and workers).
+    virtual-chunk-container config + authorization. Used by the coordinator (and by workers only
+    if the spike finds a pickled fork cannot resolve storage on its own — see Risks).
   - `init_backfill_store(repo, n_time)` — create `backfill` branch, create array `foo` at full
     shape with metadata only, write the shared source chunk bytes to a local file via
     `obstore`, commit. Returns nothing (state is in the repo).
-  - `worker(path, indices, location, offset, length, out_path)` — the worker body, run in a
-    child process: open repo, `writable_session("backfill")`, `fork()`, `set_virtual_ref` per
-    index, pickle the fork to `out_path`.
-  - `merge_and_commit(repo, forks_dir)` — open `writable_session("backfill")`, list/load every
-    fork file in `forks_dir`, `merge(*forks)`, `commit(...)`, return the new tip snapshot id.
+  - `make_forks(session, n_workers, forks_in_dir)` — call `session.fork()` once per worker and
+    pickle each fork to `forks_in_dir/worker_{i}.pkl`. Returns the per-worker index subsets.
+  - `worker(in_path, indices, location, offset, length, out_path)` — the worker body, run in a
+    child process: `pickle.load(in_path)` the coordinator-made fork, `set_virtual_ref` per
+    index, pickle the fork to `out_path`. The worker does **not** open the repo or create a
+    session — it only writes into the fork it was given.
+  - `merge_and_commit(session, forks_out_dir)` — list/load every fork file in `forks_out_dir`,
+    `session.merge(*forks)`, `session.commit(...)`, return the new tip snapshot id. Uses the
+    **same `session`** object that created the forks.
   - `promote(repo)` — `reset_branch("main", lookup_branch("backfill"))`.
 - **`tests/spike/test_fork_merge.py`** — the assertions (below).
 
@@ -128,8 +138,9 @@ All new code under `tests/spike/`. **No production code is touched.**
 
 The spike is a real test, not a demo. Assertions:
 
-1. **Primary hypothesis — independently-created forks merge.** With workers each opening their
-   own `writable_session` and forking, `merge(*forks)` + `commit()` succeeds.
+1. **Full fork round-trip merges and commits.** Coordinator-made forks survive
+   pickle-out → cross-process `set_virtual_ref` writes → pickle-back → discovery by folder
+   listing → `merge(*forks)` into the original session → `commit()`, all succeeding.
 2. **Read-back on `backfill`.** After commit, open `backfill` and assert every one of the `N`
    time slices resolves to the expected bytes/values, and no slice is missing/fill-valued.
 3. **Promotion.** After `reset_branch`, `xr.open_zarr` on `main` returns the full `(N, y, x)`
@@ -138,33 +149,24 @@ The spike is a real test, not a demo. Assertions:
    dropped in the folder, cause `merge()` to raise. This proves disjointness is what makes the
    happy path pass (not luck), and that merge genuinely detects conflicts.
 
-## Risks and the documented fallback
+## Risks
 
-**Central risk:** the icechunk docs describe the *coordinator* creating all forks from one
-session and pickling them to workers. In our preferred model each worker independently opens
-its own `writable_session` and forks it. `merge` may track fork lineage by an internal id and
-reject forks that did not descend from the merging session — or it may simply union change
-sets that share the same base snapshot. Unknown until run.
+The fork-ownership question is resolved by design: the coordinator creates all forks from one
+`writable_session` and performs the merge against that same session — the documented icechunk
+pattern. (Workers cannot independently create mergeable forks, since all forks must descend
+from the single merging session.) So the spike validates a known-supported flow rather than an
+open hypothesis; the remaining unknowns are mechanical and are what the spike confirms.
 
-**Decision (from brainstorming): test our model as the primary assertion, with a documented
-fallback.** If assertion #1 fails (merge rejects independently-created forks):
+Things the spike will surface (for the findings note):
 
-- Record the exact failure (error type/message) in the findings note.
-- Add a fallback test using the **coordinator-creates-forks** pattern: the coordinator opens
-  one `writable_session`, calls `fork()` once per worker, pickles each fork out to the workers;
-  workers write + pickle back; coordinator lists the folder and merges. This proves the cycle
-  works *some* way and tells the real design which fork-ownership model to use.
-
-Either outcome is a successful spike — it yields a definitive answer plus a working harness.
-
-Secondary things the spike will surface (for the findings note):
-
+- Whether a coordinator-made `ForkSession` round-trips through pickle intact across a
+  `spawn`ed process, gets `set_virtual_ref` writes applied, pickles back, and merges into the
+  original in-memory session.
 - Whether `set_virtual_ref` requires the array metadata to pre-exist (expected yes) and whether
   `validate_container=False` is needed for the local virtual chunk container.
-- Whether the nested lineage `session → fork → (worker writes)` round-trips through pickle
-  intact across a `spawn`ed process.
-- Any gotchas in opening the same `local_filesystem_storage` repo concurrently from multiple
-  processes.
+- Whether a pickled fork can resolve repo storage on its own in the worker process, or whether
+  the worker also needs the repo/storage config available (informs how the real worker Lambda
+  is packaged).
 
 ## Out of scope (deferred to the real implementation design)
 
