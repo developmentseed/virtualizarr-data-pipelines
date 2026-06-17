@@ -5,6 +5,7 @@ This is throwaway proof-of-mechanics code, not production code.
 """
 
 import os
+import pickle
 
 import icechunk
 import numpy as np
@@ -79,3 +80,23 @@ def init_backfill_store(repo: icechunk.Repository, work: str) -> None:
         dimension_names=("time", "y", "x"),
     )
     session.commit("Initialize backfill shape")
+
+
+def run_worker(
+    in_path: str, indices: list[int], source_url: str, out_path: str
+) -> None:
+    """Worker body. Runs in a separate (spawned) process. Loads the coordinator-made
+    fork, writes a virtual chunk reference for each assigned time index, and pickles
+    the fork back. Does NOT open the repo — the pickled fork carries everything."""
+    with open(in_path, "rb") as f:
+        fork = pickle.loads(f.read())
+    for t in indices:
+        fork.store.set_virtual_ref(
+            f"foo/c/{t}/0/0",
+            source_url,
+            offset=t * CHUNK_NBYTES,
+            length=CHUNK_NBYTES,
+            validate_container=False,
+        )
+    with open(out_path, "wb") as f:
+        f.write(pickle.dumps(fork))
