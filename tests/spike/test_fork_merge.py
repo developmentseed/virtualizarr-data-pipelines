@@ -56,3 +56,17 @@ def test_worker_writes_refs_in_process(tmp_path: pathlib.Path) -> None:
         assert (np.asarray(arr[t]) == t).all()
     # Indices not written remain fill (0).
     assert (np.asarray(arr[4]) == 0).all()
+
+
+def test_cross_process_fork_merge_commits_all_slices(tmp_path: pathlib.Path) -> None:
+    work = str(tmp_path)
+    repo = bk.open_repo(work)
+    bk.write_source(work)
+    bk.init_backfill_store(repo, work)
+
+    tip = bk.run_backfill(repo, work, subsets=[[0, 1, 2], [3, 4, 5]])
+    assert tip  # non-empty snapshot id
+
+    arr = zarr.open_group(repo.readonly_session("backfill").store, mode="r")["foo"]
+    for t in range(bk.N):
+        assert (np.asarray(arr[t]) == t).all(), (t, np.asarray(arr[t]))

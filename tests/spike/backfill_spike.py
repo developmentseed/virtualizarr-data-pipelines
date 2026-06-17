@@ -4,8 +4,10 @@ See docs/superpowers/specs/2026-06-17-backfill-fork-merge-spike-design.md.
 This is throwaway proof-of-mechanics code, not production code.
 """
 
+import multiprocessing as mp
 import os
 import pickle
+from typing import cast
 
 import icechunk
 import numpy as np
@@ -100,3 +102,42 @@ def run_worker(
         )
     with open(out_path, "wb") as f:
         f.write(pickle.dumps(fork))
+
+
+def run_backfill(repo: icechunk.Repository, work: str, subsets: list[list[int]]) -> str:
+    """Coordinator. Opens one writable session, forks once per worker subset, spawns
+    a worker process per fork, then discovers the returned forks by listing the output
+    folder, merges them into the same session, and commits once. Returns the new tip."""
+    forks_in = os.path.join(work, "forks_in")
+    forks_out = os.path.join(work, "forks_out")
+    os.makedirs(forks_in, exist_ok=True)
+    os.makedirs(forks_out, exist_ok=True)
+
+    session = repo.writable_session("backfill")
+    ctx = mp.get_context("spawn")
+    procs = []
+    for i, subset in enumerate(subsets):
+        in_path = os.path.join(forks_in, f"worker_{i}.pkl")
+        out_path = os.path.join(forks_out, f"worker_{i}.pkl")
+        with open(in_path, "wb") as f:
+            f.write(pickle.dumps(session.fork()))
+        proc = ctx.Process(
+            target=run_worker,
+            args=(in_path, subset, _source_url(work), out_path),
+        )
+        proc.start()
+        procs.append(proc)
+
+    for proc in procs:
+        proc.join()
+        if proc.exitcode != 0:
+            raise RuntimeError(f"worker exited with {proc.exitcode}")
+
+    # Discovery by folder listing — mirrors a reducer listing an S3 prefix.
+    forks = []
+    for name in sorted(os.listdir(forks_out)):
+        with open(os.path.join(forks_out, name), "rb") as f:
+            forks.append(pickle.loads(f.read()))
+
+    session.merge(*forks)
+    return cast(str, session.commit("Backfill commit"))
