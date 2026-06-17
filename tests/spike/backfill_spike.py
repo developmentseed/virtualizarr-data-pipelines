@@ -140,4 +140,6 @@ def run_backfill(repo: icechunk.Repository, work: str, subsets: list[list[int]])
             forks.append(pickle.loads(f.read()))
 
     session.merge(*forks)
+    # cast: pre-commit mypy runs without icechunk, so commit() is Any there and
+    # warn_return_any flags a bare return. Do not remove.
     return cast(str, session.commit("Backfill commit"))
