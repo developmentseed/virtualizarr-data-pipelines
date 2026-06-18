@@ -102,28 +102,29 @@ init_backfill_store(repo, N)
 
 ## Components
 
-All new code under `tests/spike/`. **No production code is touched.**
+All new code under `tests/spike/`. **No production code is touched.** (Function names below
+reflect the final implementation; an earlier draft split the coordinator into
+`make_forks`/`merge_and_commit`, but those were consolidated into a single `run_backfill`.)
 
 - **`tests/spike/backfill_spike.py`** — helpers:
-  - `open_repo(path)` — open the repo from `icechunk.local_filesystem_storage(path)` with the
-    virtual-chunk-container config + authorization. Used by the coordinator (and by workers only
-    if the spike finds a pickled fork cannot resolve storage on its own — see Risks).
-  - `init_backfill_store(repo, n_time)` — create `backfill` branch off the `main` tip, then on
-    a `writable_session("backfill")` create array `foo` (metadata only) via
-    `zarr.open_group(session.store).create_array("foo", shape=(N,y,x), chunks=(1,y,x),
-    dtype="int32", serializer=BytesCodec(), compressors=None, filters=None,
-    dimension_names=("time","y","x"))`, write the shared source chunk bytes to a local file via
-    `obstore` (one buffer per time step, value `t`, so chunk `t` lives at byte offset
-    `t * y * x * itemsize`), and commit. (Verified working during design.)
-  - `make_forks(session, n_workers, forks_in_dir)` — call `session.fork()` once per worker and
-    pickle each fork to `forks_in_dir/worker_{i}.pkl`. Returns the per-worker index subsets.
-  - `worker(in_path, indices, location, offset, length, out_path)` — the worker body, run in a
-    child process: `pickle.load(in_path)` the coordinator-made fork, `set_virtual_ref` per
-    index, pickle the fork to `out_path`. The worker does **not** open the repo or create a
-    session — it only writes into the fork it was given.
-  - `merge_and_commit(session, forks_out_dir)` — list/load every fork file in `forks_out_dir`,
-    `session.merge(*forks)`, `session.commit(...)`, return the new tip snapshot id. Uses the
-    **same `session`** object that created the forks.
+  - `open_repo(work)` — open the repo from `icechunk.local_filesystem_storage(...)` with the
+    virtual-chunk-container config + authorization. Used by the coordinator. (Workers do **not**
+    open the repo — confirmed by the spike; see Findings.)
+  - `write_source(work)` — write the shared source file: one buffer per time step, value `t`, so
+    chunk `t` lives at byte offset `t * CHUNK_NBYTES`, via `obstore`.
+  - `init_backfill_store(repo, work)` — create `backfill` branch off the `main` tip, then on a
+    `writable_session("backfill")` create array `foo` (metadata only) via
+    `zarr.open_group(session.store).create_array("foo", shape=(N,Y,X), chunks=(1,Y,X),
+    dtype=DTYPE, serializer=BytesCodec(), compressors=None, filters=None,
+    dimension_names=("time","y","x"))`, and commit.
+  - `run_worker(in_path, indices, source_url, out_path)` — the worker body, run in a spawned
+    child process: `pickle.load` the coordinator-made fork, `set_virtual_ref` per index, pickle
+    the fork to `out_path`. The worker does **not** open the repo or create a session — it only
+    writes into the fork it was given.
+  - `run_backfill(repo, work, subsets)` — the coordinator: open one `writable_session("backfill")`,
+    fork once per subset and pickle each to `forks_in/`, spawn a `run_worker` process per fork,
+    join (raising on nonzero exit), then discover the returned forks by listing `forks_out/`,
+    `session.merge(*forks)` into the **same** session, and `commit(...)`. Returns the new tip.
   - `promote(repo)` — `reset_branch("main", lookup_branch("backfill"))`.
 - **`tests/spike/test_fork_merge.py`** — the assertions (below).
 

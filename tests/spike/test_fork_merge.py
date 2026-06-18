@@ -35,6 +35,9 @@ def test_init_creates_backfill_branch_and_full_shape_array(
 
 
 def test_worker_writes_refs_in_process(tmp_path: pathlib.Path) -> None:
+    # run_worker is called in-process here to isolate the set_virtual_ref + merge
+    # mechanics; the real cross-process spawn/pickle path is proven separately in
+    # test_cross_process_fork_merge_commits_all_slices.
     work = str(tmp_path)
     repo = bk.open_repo(work)
     bk.write_source(work)
