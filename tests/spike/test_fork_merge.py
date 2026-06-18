@@ -70,3 +70,17 @@ def test_cross_process_fork_merge_commits_all_slices(tmp_path: pathlib.Path) -> 
     arr = zarr.open_group(repo.readonly_session("backfill").store, mode="r")["foo"]
     for t in range(bk.N):
         assert (np.asarray(arr[t]) == t).all(), (t, np.asarray(arr[t]))
+
+
+def test_promotion_makes_backfill_visible_on_main(tmp_path: pathlib.Path) -> None:
+    work = str(tmp_path)
+    repo = bk.open_repo(work)
+    bk.write_source(work)
+    bk.init_backfill_store(repo, work)
+    bk.run_backfill(repo, work, subsets=[[0, 1, 2], [3, 4, 5]])
+
+    bk.promote(repo)
+
+    arr = zarr.open_group(repo.readonly_session("main").store, mode="r")["foo"]
+    expected = np.arange(bk.N)[:, None, None]  # each slice t == t
+    assert (np.asarray(arr[:]) == expected).all()
