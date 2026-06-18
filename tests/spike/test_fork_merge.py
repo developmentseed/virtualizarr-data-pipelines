@@ -84,3 +84,41 @@ def test_promotion_makes_backfill_visible_on_main(tmp_path: pathlib.Path) -> Non
     arr = zarr.open_group(repo.readonly_session("main").store, mode="r")["foo"]
     expected = np.arange(bk.N)[:, None, None]  # each slice t == t
     assert (np.asarray(arr[:]) == expected).all()
+
+
+def test_overlapping_writes_last_writer_wins_no_conflict(
+    tmp_path: pathlib.Path,
+) -> None:
+    work = str(tmp_path)
+    repo = bk.open_repo(work)
+    bk.write_source(work)
+    bk.init_backfill_store(repo, work)
+
+    session = repo.writable_session("backfill")
+
+    # Two forks BOTH target chunk key foo/c/0/0/0, but point at different source
+    # offsets: fork A -> value 0, fork B -> value 5.
+    fork_a = session.fork()
+    fork_a.store.set_virtual_ref(
+        "foo/c/0/0/0",
+        bk._source_url(work),
+        offset=0 * bk.CHUNK_NBYTES,
+        length=bk.CHUNK_NBYTES,
+        validate_container=False,
+    )
+    fork_b = session.fork()
+    fork_b.store.set_virtual_ref(
+        "foo/c/0/0/0",
+        bk._source_url(work),
+        offset=5 * bk.CHUNK_NBYTES,
+        length=bk.CHUNK_NBYTES,
+        validate_container=False,
+    )
+
+    # No conflict raised on merge or commit.
+    session.merge(fork_a, fork_b)
+    session.commit("overlapping writes")
+
+    arr = zarr.open_group(repo.readonly_session("backfill").store, mode="r")["foo"]
+    # Last fork merged (B) wins.
+    assert (np.asarray(arr[0]) == 5).all()
