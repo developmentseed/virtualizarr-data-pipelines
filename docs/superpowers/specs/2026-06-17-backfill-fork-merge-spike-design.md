@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-17
 **Issue:** [#12 — Refactor backfill processing to use partitioned fork and merge approach](https://github.com/developmentseed/virtualizarr-data-pipelines/issues/12)
-**Status:** Design approved, pending spec review
+**Status:** Spike complete — all 6 tests passing; see Findings.
 
 ## Background
 
@@ -206,3 +206,67 @@ The spike informs all of these but builds none of them.
 2. A short **findings note** appended to this spec (what worked, the merge-lineage answer,
    gotchas, and a recommended shape for the future `VirtualizarrProcessor` interface change)
    to carry into the real implementation design.
+
+## Findings (spike results)
+
+Implemented in `tests/spike/backfill_spike.py` + `tests/spike/test_fork_merge.py`
+(6 tests, all passing) on icechunk 1.1.14 / zarr 3.1.5 / Python 3.13. Every claim below is
+backed by an executable test, not a one-off scratch run.
+
+- **Coordinator-creates-forks cycle works end-to-end across real processes.** A
+  `writable_session` fork survives `pickle` → a `multiprocessing` `spawn`ed worker process →
+  `set_virtual_ref` writes → `pickle` back → discovery-by-folder-listing → `merge(*forks)` →
+  `commit`, and all `N` slices read back correct
+  (`test_cross_process_fork_merge_commits_all_slices`). `reset_branch("main", backfill_tip)`
+  then makes the data visible on `main` (`test_promotion_makes_backfill_visible_on_main`).
+- **Workers need only the fork — not the repo.** The spawned worker (`run_worker`) calls
+  `set_virtual_ref` on the unpickled fork without opening the repo or holding any storage
+  config; it only needs the fork bytes plus the source `location`/`offset`/`length`.
+  **Implication for the real pipeline:** the worker Lambda's payload is just the serialized
+  fork (from S3) and the list of (chunk-key, source-URI, offset, length) refs to write — it
+  does not need repo credentials or the storage/virtual-chunk-container config. Only the
+  coordinator (init + reduce) needs full repo access.
+- **`spawn` import works via propagated `sys.path`.** Keeping `backfill_spike` a top-level
+  module (no `tests/spike/__init__.py`) plus the test's `sys.path.insert` lets the spawned
+  child re-import the worker target. `spawn` (not `fork`) was used deliberately to force
+  genuine pickling. In the real deployment the worker is a separate Lambda, so this importability
+  concern disappears — but it confirms the fork carries everything needed across a process
+  boundary.
+- **Merge does NOT detect chunk overlap (last-writer-wins).** Confirmed by
+  `test_overlapping_writes_last_writer_wins_no_conflict`: two forks writing different content to
+  the same chunk key merge and commit with no error; the last-merged fork wins. icechunk's
+  conflict detection is a *rebase-against-a-branch-tip* mechanism, not a sibling-fork-merge one.
+  **Implication:** the partitioner MUST guarantee disjoint chunk assignments per worker; the
+  merge provides no safety net. This is the single most important constraint for the real design.
+- **Array creation:** `zarr.Group.create_array(..., serializer=BytesCodec(), compressors=None,
+  filters=None)` on the session store produces a metadata-only array (`test_init_...` reads
+  shape/dtype before any chunks exist); `set_virtual_ref` then populates chunks. Raw
+  little-endian bytes via `BytesCodec` line up with the synthetic source file at
+  `offset = t * CHUNK_NBYTES`. `set_virtual_ref` requires the array metadata to pre-exist, and
+  `validate_container=False` was used for the local `file://` container.
+- **Tooling gotcha worth recording:** the repo's pre-commit `mirrors-mypy` hook runs in an
+  isolated environment **without `icechunk` installed**, so icechunk return types resolve to
+  `Any` there. With `warn_return_any = true`, any function returning an icechunk call result
+  typed `-> str` (e.g. `run_backfill` returning `session.commit(...)`) needs a `typing.cast`.
+  This will recur in the real Lambda/handler code — expect to either `cast` or relax
+  `warn_return_any` for icechunk-touching modules. (`uv run mypy` in the project venv does *not*
+  reproduce this, since icechunk is installed there.)
+
+### Recommended `VirtualizarrProcessor` interface direction (for the real build)
+
+The current Protocol is append-oriented (`process_file(file_key, session)` →
+`vds.vz.to_icechunk(session.store, append_dim="time")`). Backfill needs region/ref-oriented
+writes instead. Suggested shape to validate during the real design:
+
+- `initialize_backfill_store(repo, manifest) -> None` — create the `backfill` branch and the
+  full-shape array(s) up front from a known global shape. The user must supply the total shape /
+  coordinate extent (e.g. from the inventory), since the store can no longer grow by append.
+- `plan_refs(file_key) -> list[ChunkRef]` (or similar) — map one input file to the explicit set
+  of `(chunk_key, source_uri, offset, length)` virtual references it contributes, addressed by
+  absolute index in the pre-sized array. This is the unit a worker writes via `set_virtual_ref`,
+  and it is the contract the partitioner uses to guarantee disjointness.
+- Keep the existing append-based path for the operational/forward-processing pipeline; backfill
+  is an additional code path, not a replacement.
+
+This keeps worker payloads small (just refs), makes disjointness checkable before dispatch, and
+matches what the spike proved works.
