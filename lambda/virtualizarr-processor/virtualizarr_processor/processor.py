@@ -63,6 +63,10 @@ def synthetic_vds(date: str) -> xr.Dataset:
 
 
 class Processor:
+    def __init__(self, bucket: str = "", prefix: str = "") -> None:
+        self.bucket = bucket
+        self.prefix = prefix
+
     def initialize_repo(self) -> Repository:
         chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
         storage = icechunk.in_memory_storage()
@@ -104,8 +108,9 @@ class Processor:
         snapshot = session.commit(message=f"Append to {session.snapshot_id}")
         return str(snapshot)
 
-    def garbage_collect(self, expiry_time: datetime) -> icechunk.GCSummary:
-        repo = self.initialize_repo()
+    def garbage_collect(
+        self, repo: Repository, expiry_time: datetime
+    ) -> icechunk.GCSummary:
         repo.expire_snapshots(older_than=expiry_time)
         gcs = repo.garbage_collect(delete_object_older_than=expiry_time)
         return gcs

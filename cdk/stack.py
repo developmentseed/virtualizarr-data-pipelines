@@ -42,7 +42,7 @@ from aws_cdk import (
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 from settings import StackSettings  # type: ignore[import-not-found]
-from stack_constructs import BatchInfra, BatchJob
+from stack_constructs import BatchInfra, BatchJob  # type: ignore[import-not-found]
 
 
 class VirtualizarrSqsStack(Stack):
@@ -61,14 +61,15 @@ class VirtualizarrSqsStack(Stack):
             self,
             f"{settings.STACK_NAME}-Dlq",
             queue_name=f"{settings.STACK_NAME}-Dlq",
-            retention_period=Duration.days(14),
+            retention_period=Duration.days(settings.SQS_RETENTION_PERIOD_DAYS),
         )
 
         self.queue = sqs.Queue(
             self,
             f"{settings.STACK_NAME}-queue",
             queue_name=f"{settings.STACK_NAME}-queue",
-            visibility_timeout=Duration.seconds(1800),
+            visibility_timeout=Duration.seconds(settings.VISIBILITY_TIMEOUT),
+            retention_period=Duration.days(settings.SQS_RETENTION_PERIOD_DAYS),
             dead_letter_queue=sqs.DeadLetterQueue(
                 max_receive_count=20,
                 queue=self.dlq,
@@ -110,8 +111,12 @@ class VirtualizarrSqsStack(Stack):
                 platform=ecr_assets.Platform.LINUX_AMD64,  # or LINUX_AMD64
             ),
             architecture=_lambda.Architecture.X86_64,
-            timeout=Duration.minutes(5),
-            memory_size=2048,
+            timeout=Duration.seconds(settings.LAMBDA_TIMEOUT),
+            memory_size=settings.LAMBDA_MEMORY,
+            environment={
+                "ICECHUNK_BUCKET": self.icechunk_bucket.bucket_name,
+                "ICECHUNK_PREFIX": settings.ICECHUNK_PREFIX or "",
+            },
         )
 
         self.queue.grant_consume_messages(self.process_messages_lambda)
@@ -136,6 +141,7 @@ class VirtualizarrSqsStack(Stack):
             lambda_event_sources.SqsEventSource(
                 self.queue,
                 batch_size=settings.SQS_BATCH_SIZE,
+                max_batching_window=Duration.seconds(settings.SQS_MAX_BATCHING_WINDOW),
                 report_batch_item_failures=True,
                 max_concurrency=settings.MAX_CONCURRENCY,
             )
@@ -152,6 +158,10 @@ class VirtualizarrSqsStack(Stack):
             architecture=_lambda.Architecture.X86_64,
             timeout=Duration.minutes(5),
             memory_size=2048,
+            environment={
+                "ICECHUNK_BUCKET": self.icechunk_bucket.bucket_name,
+                "ICECHUNK_PREFIX": settings.ICECHUNK_PREFIX or "",
+            },
         )
 
         self.icechunk_bucket.grant_read_write(self.initialize_icechunk_lambda)
@@ -170,8 +180,13 @@ class VirtualizarrSqsStack(Stack):
                     },
                     physical_resource_id=cr.PhysicalResourceId.of("trigger-once-id"),
                 ),
-                policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
-                    resources=[self.initialize_icechunk_lambda.function_arn]
+                policy=cr.AwsCustomResourcePolicy.from_statements(
+                    [
+                        iam.PolicyStatement(
+                            actions=["lambda:InvokeFunction"],
+                            resources=[self.initialize_icechunk_lambda.function_arn],
+                        )
+                    ]
                 ),
             )
 
@@ -222,6 +237,11 @@ class VirtualizarrSqsStack(Stack):
                 image_asset=self.gc_image_asset,
                 memory_mb=2000,
                 retry_attempts=1,
+                environment={
+                    "GARBAGE_COLLECTION_EXPIRY_HOURS": str(
+                        settings.GARBAGE_COLLECTION_EXPIRY_HOURS
+                    ),
+                },
             )
             self.icechunk_bucket.grant_read_write(self.gc_job.role)
 

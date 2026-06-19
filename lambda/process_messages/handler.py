@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any, Dict
 
 from aws_lambda_powertools import Logger, Tracer
@@ -35,7 +36,7 @@ def process_notification(
     if key and bucket:
         s3_uri = f"s3://{bucket}/{key}"
         logger.info(
-            "Append file",
+            "Processing file",
             extra={"bucket": bucket, "key": key, "s3_uri": s3_uri},
         )
         processor.process_file(file_key=key, session=session)
@@ -55,7 +56,9 @@ def handler(event: Any, context: LambdaContext) -> PartialItemFailureResponse:
     """
     sqs_event = SQSEvent(event)
     records = sqs_event.raw_event["Records"]
-    virtualizarr_processor = Processor()
+    bucket = os.getenv("ICECHUNK_BUCKET", "")
+    prefix = os.getenv("ICECHUNK_PREFIX", "")
+    virtualizarr_processor = Processor(bucket=bucket, prefix=prefix)
     repo = virtualizarr_processor.initialize_repo()
     session = virtualizarr_processor.initialize_session(repo=repo)
 
@@ -104,8 +107,8 @@ def handler(event: Any, context: LambdaContext) -> PartialItemFailureResponse:
     try:
         snapshot_id = virtualizarr_processor.commit_processed_files(session=session)
         logger.info(f"Committed to {snapshot_id}")
-    except Exception:
-        logger.error("Commit failed, marking all records as failed")
+    except Exception as e:
+        logger.error(f"Commit failed with error: {e}. Marking all records as failed")
         return {
             "batchItemFailures": [
                 {"itemIdentifier": record["messageId"]} for record in records
