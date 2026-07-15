@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 import icechunk
-from icechunk import Repository, Session
+from icechunk import ForkSession, Repository, Session
 
 
 @runtime_checkable
@@ -67,6 +68,60 @@ class VirtualizarrProcessor(Protocol):
         -------
         str
             A snapshot id of the append commit.
+        """
+        ...
+
+    def initialize_backfill_store(self, repo: Repository) -> str:
+        """
+        Create the `backfill` branch off the current `main` tip and build the
+        full-shape array(s) and coordinates (metadata only), commit, and return
+        the base snapshot id.
+
+        The store is declared at its full extent up front because backfill writes
+        disjoint regions via set_virtual_ref rather than appending. The session
+        MUST have no uncommitted changes after this returns, so that forks taken
+        from a fresh session share the committed branch-tip snapshot as their base.
+
+        Parameters
+        ----------
+            repo: An Icechunk Repository (durable storage; not in-memory).
+        Returns
+        -------
+        str
+            The base snapshot id of the committed full-shape store.
+        """
+        ...
+
+    def region_for(self, file_key: str) -> Mapping[str, int]:
+        """
+        Map a file key to its absolute index/region in the pre-sized array.
+
+        Must be deterministic and side-effect-free so the partitioner can call it
+        to assign and verify disjoint partitions.
+
+        Parameters
+        ----------
+            file_key: The full key path to the source file.
+        Returns
+        -------
+        Mapping[str, int]
+            A per-dimension index map, e.g. {"time": 42}.
+        """
+        ...
+
+    def process_backfill_file(self, file_key: str, fork: ForkSession) -> bool:
+        """
+        Write the file's virtual references into the fork's store at
+        region_for(file_key) via set_virtual_ref. Must NOT commit.
+
+        Parameters
+        ----------
+            file_key: The full key path to the source file.
+            fork: An Icechunk ForkSession to write references into.
+        Returns
+        -------
+        bool
+            True if the file was successfully processed.
         """
         ...
 
