@@ -12,6 +12,7 @@ dependencies = [
 
 [tool.uv.sources]
 virtualizarr-processor = { path = "lambda/virtualizarr-processor", editable = true}
+backfill-handlers = { path = "lambda/backfill", editable = true }
 
 [dependency-groups]
 dev = [
@@ -26,6 +27,9 @@ dev = [
   "pytest",
   "ruff",
   "virtualizarr-processor",
+  "backfill-handlers",
+  "boto3>=1.34.0",
+  "moto>=5.0.0",
 ]
 
 
