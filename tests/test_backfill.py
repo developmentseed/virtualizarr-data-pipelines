@@ -1,6 +1,7 @@
 import icechunk
 import numpy as np
 import zarr
+from virtualizarr_processor import backfill
 from virtualizarr_processor.processor import Processor
 
 
@@ -30,3 +31,39 @@ def test_initialize_backfill_store_creates_full_shape(
     # geometry regression before the Task 3 round-trip.
     assert arr.chunks == (1, 2, 3)
     assert arr.dtype == np.dtype("int32")
+
+
+def _worker(shared_fork_bytes: bytes, keys: list[str]) -> bytes:
+    import pickle
+
+    processor = Processor()
+    child = pickle.loads(shared_fork_bytes).fork()
+    for key in keys:
+        assert processor.process_backfill_file(key, child)
+    return pickle.dumps(child)
+
+
+def test_full_backfill_round_trip(backfill_repo: icechunk.Repository) -> None:
+    processor = Processor()
+    processor.initialize_backfill_store(backfill_repo)
+
+    shared = backfill.create_fork(backfill_repo)
+    child_a = _worker(shared, ["0", "1", "2"])
+    child_b = _worker(shared, ["3", "4", "5"])
+
+    tip = backfill.merge_and_commit(
+        backfill_repo, [child_a, child_b], message="backfill commit"
+    )
+    assert isinstance(tip, str) and tip
+
+    arr = zarr.open_group(backfill_repo.readonly_session("backfill").store, mode="r")[
+        "foo"
+    ]
+    expected = np.arange(6)[:, None, None]
+    assert (np.asarray(arr[:]) == expected).all()
+
+    backfill.promote(backfill_repo)
+    arr_main = zarr.open_group(backfill_repo.readonly_session("main").store, mode="r")[
+        "foo"
+    ]
+    assert (np.asarray(arr_main[:]) == expected).all()
