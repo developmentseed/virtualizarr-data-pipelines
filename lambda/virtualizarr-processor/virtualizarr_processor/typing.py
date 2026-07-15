@@ -82,6 +82,9 @@ class VirtualizarrProcessor(Protocol):
         MUST have no uncommitted changes after this returns, so that forks taken
         from a fresh session share the committed branch-tip snapshot as their base.
 
+        The `backfill` branch must not already exist. This method is intended to
+        be called exactly once per backfill run.
+
         Parameters
         ----------
             repo: An Icechunk Repository (durable storage; not in-memory).

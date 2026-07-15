@@ -1,4 +1,5 @@
 import icechunk
+import numpy as np
 import zarr
 from virtualizarr_processor.processor import Processor
 
@@ -24,3 +25,8 @@ def test_initialize_backfill_store_creates_full_shape(
     session = backfill_repo.readonly_session("backfill")
     arr = zarr.open_group(session.store, mode="r")["foo"]
     assert arr.shape == (6, 2, 3)
+    # chunk geometry + dtype are load-bearing for process_backfill_file's
+    # chunk-key and byte-offset arithmetic; assert them here to catch a
+    # geometry regression before the Task 3 round-trip.
+    assert arr.chunks == (1, 2, 3)
+    assert arr.dtype == np.dtype("int32")
