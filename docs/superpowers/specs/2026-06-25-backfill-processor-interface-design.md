@@ -158,6 +158,17 @@ read-back: every slice resolves to its expected synthetic value on both backfill
 
 ## Testing
 
+**Storage requirement (verified while planning):** the backfill tests must use
+`icechunk.local_filesystem_storage(tmp_path)`, **not** the existing conftest's
+`in_memory_storage()`. A pickled `ForkSession` cannot resolve its base snapshot from in-memory
+storage even in the same process (`No data in memory found`), because the in-memory backing is
+not carried across the pickle. Filesystem (and, in production, S3) storage is durable and shared,
+so the reloaded fork resolves correctly. Consequently backfill requires durable storage — the
+append-path `initialize_repo()` (which uses `in_memory_storage`) is left as-is, and backfill gets
+its own filesystem-backed test fixture. `initialize_backfill_store(repo)` takes the repo as a
+parameter, so it never dictates storage; the caller (test fixture here; the init Lambda in
+sub-project B; S3 in production) chooses it.
+
 Local pytest alongside the existing processor tests (`tests/`), following the spike's style:
 
 - `region_for` is deterministic and returns the expected index for representative keys.
