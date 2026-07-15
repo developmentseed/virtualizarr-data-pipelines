@@ -138,6 +138,30 @@ class Processor:
         )
         return cast(str, session.commit("Initialize backfill shape"))
 
+    def open_backfill_repo(self) -> Repository:
+        chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
+        bucket = os.environ.get("ICECHUNK_BUCKET")
+        if bucket:
+            storage = icechunk.s3_storage(
+                bucket=bucket,
+                prefix=os.environ.get("ICECHUNK_PREFIX"),
+                region=os.environ.get("ICECHUNK_REGION"),
+                from_env=True,
+            )
+        else:
+            storage = icechunk.local_filesystem_storage(
+                os.environ["ICECHUNK_LOCAL_PATH"]
+            )
+        config = icechunk.RepositoryConfig.default()
+        config.set_virtual_chunk_container(
+            icechunk.VirtualChunkContainer(CHUNK_DIRECTORY_URL_PREFIX, chunk_store)
+        )
+        return icechunk.Repository.open_or_create(
+            storage=storage,
+            config=config,
+            authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+        )
+
     def region_for(self, file_key: str) -> Mapping[str, int]:
         # Synthetic keys are the integer time index as a string ("0".."5").
         # Real implementations would parse their own scheme (e.g. a date).

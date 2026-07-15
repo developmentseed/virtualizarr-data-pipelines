@@ -1,5 +1,8 @@
+import pathlib
+
 import icechunk
 import numpy as np
+import pytest
 import zarr
 from virtualizarr_processor import backfill
 from virtualizarr_processor.processor import Processor
@@ -67,3 +70,16 @@ def test_full_backfill_round_trip(backfill_repo: icechunk.Repository) -> None:
         "foo"
     ]
     assert (np.asarray(arr_main[:]) == expected).all()
+
+
+def test_open_backfill_repo_local_filesystem(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("ICECHUNK_BUCKET", raising=False)
+    monkeypatch.setenv("ICECHUNK_LOCAL_PATH", str(tmp_path / "repo"))
+    processor = Processor()
+
+    repo = processor.open_backfill_repo()
+
+    assert isinstance(repo, icechunk.Repository)
+    assert "main" in repo.list_branches()

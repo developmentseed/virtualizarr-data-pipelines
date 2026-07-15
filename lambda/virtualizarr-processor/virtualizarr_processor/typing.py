@@ -95,6 +95,23 @@ class VirtualizarrProcessor(Protocol):
         """
         ...
 
+    def open_backfill_repo(self) -> Repository:
+        """
+        Open (or create) the durable backfill repository.
+
+        Storage is chosen by the implementation (e.g. S3 in a deployed Lambda,
+        local filesystem in tests). Must use durable, shared storage — a pickled
+        ForkSession cannot resolve its base snapshot from in-memory storage.
+        Uses open_or_create semantics so the `main` branch exists for
+        initialize_backfill_store to branch off.
+
+        Returns
+        -------
+        Repository
+            An Icechunk Repository backed by durable storage.
+        """
+        ...
+
     def region_for(self, file_key: str) -> Mapping[str, int]:
         """
         Map a file key to its absolute index/region in the pre-sized array.
