@@ -13,7 +13,7 @@ from typing import cast
 from icechunk import Repository
 
 
-def create_fork(repo: Repository, branch: str = "backfill") -> bytes:
+def create_fork(repo: Repository, *, branch: str = "backfill") -> bytes:
     """Open a fresh writable session on `branch` and return a pickled fork.
 
     The session is clean (init already committed), so the fork's base is the
