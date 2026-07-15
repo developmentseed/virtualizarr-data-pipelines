@@ -155,6 +155,10 @@ class Processor:
             )
             return True
         except Exception:
+            # Catch parse/region errors and I/O failures from set_virtual_ref,
+            # returning False to mirror process_file's bool contract. (Broader
+            # than process_file's `except Error` because set_virtual_ref can
+            # raise icechunk/object-store errors, not just copy.Error.)
             return False
 
     def garbage_collect(self, expiry_time: datetime) -> icechunk.GCSummary:

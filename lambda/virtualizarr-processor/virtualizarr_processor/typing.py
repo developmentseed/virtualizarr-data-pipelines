@@ -104,7 +104,9 @@ class VirtualizarrProcessor(Protocol):
 
         Parameters
         ----------
-            file_key: The full key path to the source file.
+            file_key: An identifier for the source file. The scheme is up to the
+                implementation (e.g. an S3 object key, a date string, or an
+                integer index) as long as it maps deterministically to a region.
         Returns
         -------
         Mapping[str, int]
