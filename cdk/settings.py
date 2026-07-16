@@ -40,3 +40,9 @@ class StackSettings(BaseSettings):
 
     # Cluster scaling max
     BATCH_MAX_VCPU: int = 10
+
+    # Backfill (partitioned fork/merge) pipeline
+    BACKFILL_ENABLED: bool = False
+    BACKFILL_PARTITION_SIZE: int = 500
+    BACKFILL_MAX_ITEMS_PER_BATCH: int = 10
+    BACKFILL_MAX_CONCURRENCY: int = 50
