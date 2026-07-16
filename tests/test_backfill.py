@@ -83,3 +83,5 @@ def test_open_backfill_repo_local_filesystem(
 
     assert isinstance(repo, icechunk.Repository)
     assert "main" in repo.list_branches()
+    # main must have a resolvable tip so initialize_backfill_store can branch off it
+    assert repo.lookup_branch("main")

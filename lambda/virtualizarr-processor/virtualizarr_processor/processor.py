@@ -139,6 +139,11 @@ class Processor:
         return cast(str, session.commit("Initialize backfill shape"))
 
     def open_backfill_repo(self) -> Repository:
+        # Reference impl storage config, read from the environment:
+        #   ICECHUNK_BUCKET  - if set, use S3 storage (Lambda); IAM creds via from_env
+        #   ICECHUNK_PREFIX  - S3 key prefix (optional)
+        #   ICECHUNK_REGION  - S3 region (optional)
+        #   ICECHUNK_LOCAL_PATH - filesystem repo path when no bucket (tests)
         chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
         bucket = os.environ.get("ICECHUNK_BUCKET")
         if bucket:
