@@ -2,7 +2,12 @@
 
 **Date:** 2026-06-17
 **Issue:** [#12 — Refactor backfill processing to use partitioned fork and merge approach](https://github.com/developmentseed/virtualizarr-data-pipelines/issues/12)
-**Status:** Spike complete — all 6 tests passing; see Findings.
+**Status:** Spike complete (historical). The mechanics were graduated into production
+code in sub-projects A and B; the disposable `tests/spike/` suite was removed. The two
+proofs not otherwise covered — real cross-process `spawn` fork/merge and merge's
+last-writer-wins overlap behaviour — were relocated to
+`tests/backfill_mechanics/` (harness `mechanics_harness.py`). Paths below refer to the
+original spike layout and are kept as-is for provenance. See Findings.
 
 ## Background
 

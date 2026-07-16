@@ -1,7 +1,14 @@
-"""Disposable spike: Icechunk coordinator-creates-forks distributed-write cycle.
+"""Local-filesystem harness for the Icechunk coordinator-creates-forks
+distributed-write cycle, used by test_fork_merge_mechanics.py.
 
-See docs/superpowers/specs/2026-06-17-backfill-fork-merge-spike-design.md.
-This is throwaway proof-of-mechanics code, not production code.
+It deliberately uses local filesystem storage and local-file fork blobs (not S3)
+so the cross-process test can run real `multiprocessing` spawn workers — moto's
+mocked S3 does not cross process boundaries. `run_worker` is the spawn target and
+must stay importable as a top-level module (no __init__.py in this directory).
+
+Origin: the fork/merge approach was first proven here as a spike; see
+docs/superpowers/specs/2026-06-17-backfill-fork-merge-spike-design.md. The
+production graduation lives in virtualizarr_processor (A) and backfill_handlers (B).
 """
 
 import multiprocessing as mp
@@ -143,8 +150,3 @@ def run_backfill(repo: icechunk.Repository, work: str, subsets: list[list[int]])
     # cast: pre-commit mypy runs without icechunk, so commit() is Any there and
     # warn_return_any flags a bare return. Do not remove.
     return cast(str, session.commit("Backfill commit"))
-
-
-def promote(repo: icechunk.Repository) -> None:
-    """Fast-forward main to the current backfill tip."""
-    repo.reset_branch("main", repo.lookup_branch("backfill"))

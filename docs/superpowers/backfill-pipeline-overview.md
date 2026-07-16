@@ -17,7 +17,10 @@ fast-forwards `main`. This maximizes the writes-per-commit ratio and removes tip
 
 ## Proven mechanics (icechunk 1.1.14 / virtualizarr 2.2.1)
 
-Verified by the spike (`tests/spike/`) and sub-project A:
+Verified by sub-project A, sub-project B's end-to-end test, and the low-level
+mechanics regression tests in `tests/backfill_mechanics/` (which graduated the two
+unique proofs — real cross-process `spawn` fork/merge, and merge's last-writer-wins
+overlap behaviour — out of the original disposable spike):
 
 - Store is created at full shape; workers write disjoint chunks via `set_virtual_ref`
   (VirtualiZarr `to_icechunk` only appends, so it can't target a region).
