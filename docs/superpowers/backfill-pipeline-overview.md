@@ -42,7 +42,7 @@ overlap behaviour — out of the original disposable spike):
 |-------------|-------|------|
 | **A** | Backfill Processor interface + synthetic reference impl (pure Python) | `specs/2026-06-25-backfill-processor-interface-design.md` |
 | **B** | Lambda handlers + partitioner (the Lambda layer; tested with moto + local FS) | `specs/2026-07-15-backfill-lambda-handlers-design.md` |
-| **C** | CDK Step Functions orchestration (outer state machine + inner Distributed Map, real S3) | _(not yet written)_ |
+| **C** | CDK Step Functions orchestration (outer state machine + inner Distributed Map, real S3) | `specs/2026-07-16-backfill-cdk-orchestration-design.md` |
 
 ## End-to-end workflow (outer Step Function)
 
