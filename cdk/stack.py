@@ -42,7 +42,7 @@ from aws_cdk import (
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 from settings import StackSettings  # type: ignore[import-not-found]
-from stack_constructs import BatchInfra, BatchJob
+from stack_constructs import BackfillPipeline, BatchInfra, BatchJob
 
 
 class VirtualizarrSqsStack(Stack):
@@ -241,4 +241,15 @@ class VirtualizarrSqsStack(Stack):
                     job_definition_scope=self.gc_job.job_def,
                     job_name="garbage-collection",
                 )
+            )
+
+        if settings.BACKFILL_ENABLED:
+            self.backfill_pipeline = BackfillPipeline(
+                self,
+                "BackfillPipeline",
+                icechunk_bucket=self.icechunk_bucket,
+                data_bucket_name=settings.DATA_BUCKET_NAME,
+                partition_size=settings.BACKFILL_PARTITION_SIZE,
+                max_items_per_batch=settings.BACKFILL_MAX_ITEMS_PER_BATCH,
+                max_concurrency=settings.BACKFILL_MAX_CONCURRENCY,
             )
