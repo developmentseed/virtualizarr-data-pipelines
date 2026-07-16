@@ -22,3 +22,7 @@ def test_partition_splits_inventory_into_manifests(
     assert [p["partition_id"] for p in parts] == ["0", "1", "2"]
     assert inventory.read_manifest(parts[0]["manifest_uri"]) == ["0", "1"]
     assert inventory.read_manifest(parts[2]["manifest_uri"]) == ["4"]
+    # manifest_key is the S3 object key of the manifest (for the
+    # Distributed Map ItemReader).
+    assert parts[0]["manifest_key"] == "run/partitions/0.json"
+    assert parts[2]["manifest_key"] == "run/partitions/2.json"
