@@ -1,8 +1,12 @@
+from unittest.mock import MagicMock
+
 import boto3
 from backfill_handlers import inventory, partition
 
 
-def test_partition_splits_inventory_into_manifests(s3_bucket: str) -> None:
+def test_partition_splits_inventory_into_manifests(
+    s3_bucket: str, lambda_context: MagicMock
+) -> None:
     boto3.client("s3", region_name="us-east-1").put_object(
         Bucket=s3_bucket, Key="inv.json", Body=b'["0", "1", "2", "3", "4"]'
     )
@@ -12,7 +16,7 @@ def test_partition_splits_inventory_into_manifests(s3_bucket: str) -> None:
         "partition_size": 2,
     }
 
-    result = partition.handler(event, None)
+    result = partition.handler(event, lambda_context)
 
     parts = result["partitions"]
     assert [p["partition_id"] for p in parts] == ["0", "1", "2"]

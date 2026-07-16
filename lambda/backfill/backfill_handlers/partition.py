@@ -11,6 +11,7 @@ logger = Logger()
 tracer = Tracer()
 
 
+@logger.inject_lambda_context()
 @tracer.capture_lambda_handler
 def handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
     keys = inventory.read_inventory(event["inventory_uri"])
