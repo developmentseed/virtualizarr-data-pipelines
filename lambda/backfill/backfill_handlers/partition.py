@@ -32,6 +32,9 @@ def handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
                 "partition_id": partition_id,
                 "manifest_uri": manifest_uri,
                 "manifest_key": manifest_key,
+                # carried through so the fork handler (which gets the raw partition
+                # item as its event) can build the per-partition fork S3 locations.
+                "run_prefix": run_prefix,
             }
         )
 

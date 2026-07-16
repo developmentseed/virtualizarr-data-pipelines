@@ -133,7 +133,9 @@ class BackfillPipeline(Construct):
             "InnerMap",
             item_reader=sfn.S3JsonItemReader(
                 bucket=icechunk_bucket,
-                key=sfn.JsonPath.string_at("$.forkResult.manifest_key"),
+                # manifest_key comes from the partition item ($ here is the outer
+                # Map iteration state); the fork result does not carry it.
+                key=sfn.JsonPath.string_at("$.manifest_key"),
             ),
             item_batcher=sfn.ItemBatcher(
                 max_items_per_batch=max_items_per_batch,
@@ -155,6 +157,16 @@ class BackfillPipeline(Construct):
             self,
             "ReduceTask",
             lambda_function=self.functions["reduce"],
+            # forks_out_prefix lives under the fork result; reshape to the flat
+            # event the reduce handler expects.
+            payload=sfn.TaskInput.from_object(
+                {
+                    "partition_id": sfn.JsonPath.string_at("$.partition_id"),
+                    "forks_out_prefix": sfn.JsonPath.string_at(
+                        "$.forkResult.forks_out_prefix"
+                    ),
+                }
+            ),
             payload_response_only=True,
             result_path="$.reduceResult",
         )

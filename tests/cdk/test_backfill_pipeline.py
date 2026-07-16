@@ -93,13 +93,16 @@ def test_state_machine_shape() -> None:
 
     asl = _state_machine_asl()
     # inner Distributed Map with a dynamic per-partition ItemReader key
+    # (manifest_key comes from the partition item, not the fork result)
     assert '"Mode":"DISTRIBUTED"' in asl
-    assert '"Key.$":"$.forkResult.manifest_key"' in asl
+    assert '"Key.$":"$.manifest_key"' in asl
     assert '"MaxItemsPerBatch":10' in asl
     # outer Map is serial
     assert '"MaxConcurrency":1' in asl
     # worker event reshape (Items -> file_keys, BatchInput carries the constants)
     assert '"file_keys.$":"$.Items"' in asl
     assert "$.BatchInput.fork_in_uri" in asl
+    # reduce is reshaped to the flat event its handler expects
+    assert '"forks_out_prefix.$":"$.forkResult.forks_out_prefix"' in asl
     # run_prefix derives from the execution name
     assert "Execution.Name" in asl

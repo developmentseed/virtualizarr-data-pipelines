@@ -26,3 +26,5 @@ def test_partition_splits_inventory_into_manifests(
     # Distributed Map ItemReader).
     assert parts[0]["manifest_key"] == "run/partitions/0.json"
     assert parts[2]["manifest_key"] == "run/partitions/2.json"
+    # run_prefix is carried on each item so the fork handler can use it downstream.
+    assert parts[0]["run_prefix"] == event["run_prefix"]
