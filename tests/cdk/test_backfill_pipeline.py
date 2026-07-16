@@ -60,3 +60,46 @@ def test_worker_has_data_bucket_read_and_list() -> None:
             }
         ),
     )
+
+
+def _state_machine_asl() -> str:
+    app = cdk.App()
+    stack = cdk.Stack(
+        app,
+        "TestStack",
+        env=cdk.Environment(account="111111111111", region="us-east-1"),
+    )
+    bucket = s3.Bucket(stack, "IceBucket")
+    BackfillPipeline(
+        stack,
+        "Backfill",
+        icechunk_bucket=bucket,
+        data_bucket_name="my-data-bucket",
+        partition_size=500,
+        max_items_per_batch=10,
+        max_concurrency=50,
+    )
+    tmpl = app.synth().get_stack_by_name("TestStack").template
+    for res in tmpl["Resources"].values():
+        if res["Type"] == "AWS::StepFunctions::StateMachine":
+            parts = res["Properties"]["DefinitionString"]["Fn::Join"][1]
+            return "".join(p if isinstance(p, str) else "<REF>" for p in parts)
+    raise AssertionError("no state machine synthesized")
+
+
+def test_state_machine_shape() -> None:
+    template = _template()
+    template.resource_count_is("AWS::StepFunctions::StateMachine", 1)
+
+    asl = _state_machine_asl()
+    # inner Distributed Map with a dynamic per-partition ItemReader key
+    assert '"Mode":"DISTRIBUTED"' in asl
+    assert '"Key.$":"$.forkResult.manifest_key"' in asl
+    assert '"MaxItemsPerBatch":10' in asl
+    # outer Map is serial
+    assert '"MaxConcurrency":1' in asl
+    # worker event reshape (Items -> file_keys, BatchInput carries the constants)
+    assert '"file_keys.$":"$.Items"' in asl
+    assert "$.BatchInput.fork_in_uri" in asl
+    # run_prefix derives from the execution name
+    assert "Execution.Name" in asl

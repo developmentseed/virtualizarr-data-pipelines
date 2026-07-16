@@ -5,6 +5,8 @@ from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lmb
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_stepfunctions as sfn
+from aws_cdk import aws_stepfunctions_tasks as tasks
 from constructs import Construct
 
 _ACTIONS = ["partition", "init", "fork", "worker", "reduce", "promote"]
@@ -62,3 +64,121 @@ class BackfillPipeline(Construct):
         )
         self.functions["worker"].add_to_role_policy(data_policy)
         self.functions["partition"].add_to_role_policy(data_policy)
+
+        self.state_machine = self._build_state_machine(
+            icechunk_bucket, partition_size, max_items_per_batch, max_concurrency
+        )
+
+    def _build_state_machine(
+        self,
+        icechunk_bucket: s3.IBucket,
+        partition_size: int,
+        max_items_per_batch: int,
+        max_concurrency: int,
+    ) -> sfn.StateMachine:
+        partition = tasks.LambdaInvoke(
+            self,
+            "PartitionTask",
+            lambda_function=self.functions["partition"],
+            payload=sfn.TaskInput.from_object(
+                {
+                    "inventory_uri": sfn.JsonPath.string_at("$.inventory_uri"),
+                    "run_prefix": sfn.JsonPath.format(
+                        "s3://{}/backfill/{}/",
+                        icechunk_bucket.bucket_name,
+                        sfn.JsonPath.string_at("$$.Execution.Name"),
+                    ),
+                    "partition_size": partition_size,
+                }
+            ),
+            payload_response_only=True,
+            result_path="$.partitionResult",
+        )
+
+        init = tasks.LambdaInvoke(
+            self,
+            "InitTask",
+            lambda_function=self.functions["init"],
+            payload=sfn.TaskInput.from_object({}),
+            payload_response_only=True,
+            result_path="$.initResult",
+        )
+
+        fork = tasks.LambdaInvoke(
+            self,
+            "ForkTask",
+            lambda_function=self.functions["fork"],
+            payload_response_only=True,
+            result_path="$.forkResult",
+        )
+
+        worker = tasks.LambdaInvoke(
+            self,
+            "WorkerTask",
+            lambda_function=self.functions["worker"],
+            payload=sfn.TaskInput.from_object(
+                {
+                    "file_keys": sfn.JsonPath.string_at("$.Items"),
+                    "fork_in_uri": sfn.JsonPath.string_at("$.BatchInput.fork_in_uri"),
+                    "forks_out_prefix": sfn.JsonPath.string_at(
+                        "$.BatchInput.forks_out_prefix"
+                    ),
+                }
+            ),
+            payload_response_only=True,
+        )
+
+        inner_map = sfn.DistributedMap(
+            self,
+            "InnerMap",
+            item_reader=sfn.S3JsonItemReader(
+                bucket=icechunk_bucket,
+                key=sfn.JsonPath.string_at("$.forkResult.manifest_key"),
+            ),
+            item_batcher=sfn.ItemBatcher(
+                max_items_per_batch=max_items_per_batch,
+                batch_input={
+                    "fork_in_uri": sfn.JsonPath.string_at("$.forkResult.fork_in_uri"),
+                    "forks_out_prefix": sfn.JsonPath.string_at(
+                        "$.forkResult.forks_out_prefix"
+                    ),
+                },
+            ),
+            max_concurrency=max_concurrency,
+            # No tolerated_failure_*: the Distributed Map default fails on any worker
+            # failure, so a partition never reduces on an incomplete fork set.
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        inner_map.item_processor(worker)
+
+        reduce = tasks.LambdaInvoke(
+            self,
+            "ReduceTask",
+            lambda_function=self.functions["reduce"],
+            payload_response_only=True,
+            result_path="$.reduceResult",
+        )
+
+        outer_map = sfn.Map(
+            self,
+            "OuterMap",
+            items_path="$.partitionResult.partitions",
+            max_concurrency=1,
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        outer_map.item_processor(fork.next(inner_map).next(reduce))
+
+        promote = tasks.LambdaInvoke(
+            self,
+            "PromoteTask",
+            lambda_function=self.functions["promote"],
+            payload=sfn.TaskInput.from_object({}),
+            payload_response_only=True,
+        )
+
+        definition = partition.next(init).next(outer_map).next(promote)
+        return sfn.StateMachine(
+            self,
+            "StateMachine",
+            definition_body=sfn.DefinitionBody.from_chainable(definition),
+        )
