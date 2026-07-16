@@ -53,6 +53,7 @@ class BackfillPipeline(Construct):
 
         # worker parses source files; partition reads the inventory object.
         data_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
             actions=["s3:GetObject", "s3:ListBucket"],
             resources=[
                 f"arn:aws:s3:::{data_bucket_name}/*",
