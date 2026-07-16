@@ -13,3 +13,7 @@ def test_list_forks_returns_all_uris_under_prefix(s3_bucket: str) -> None:
     fork_store.save_fork(prefix + "b.pkl", b"b")
     listed = fork_store.list_forks(prefix)
     assert sorted(listed) == [prefix + "a.pkl", prefix + "b.pkl"]
+
+
+def test_list_forks_returns_empty_list_for_unknown_prefix(s3_bucket: str) -> None:
+    assert fork_store.list_forks(f"s3://{s3_bucket}/forks/nonexistent/") == []
