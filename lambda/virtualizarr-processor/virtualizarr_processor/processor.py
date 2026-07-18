@@ -177,6 +177,9 @@ class Processor:
         """A one-time-step virtual dataset for backfill index t, carrying the
         matching `time` coordinate so to_icechunk(region="auto") can place it."""
         buf = np.full((1, BACKFILL_Y, BACKFILL_X), t, dtype=BACKFILL_DTYPE).tobytes()
+        # Synthetic reference only: each slice writes its own local source chunk.
+        # These accumulate under CHUNK_DIR; a real Processor references existing
+        # source files (e.g. in S3) and does not create per-slice temp files.
         filepath = f"{CHUNK_DIR}/backfill_slice_{t}"
         obstore.put(obstore.store.LocalStore(), filepath, buf)
         manifest = ChunkManifest(
