@@ -34,6 +34,9 @@ def test_initialize_backfill_store_creates_full_shape(
     # geometry regression before the Task 3 round-trip.
     assert arr.chunks == (1, 2, 3)
     assert arr.dtype == np.dtype("int32")
+    time_coord = zarr.open_group(session.store, mode="r")["time"]
+    assert time_coord.shape == (6,)
+    assert (np.asarray(time_coord[:]) == np.arange(6)).all()
 
 
 def _worker(shared_fork_bytes: bytes, keys: list[str]) -> bytes:

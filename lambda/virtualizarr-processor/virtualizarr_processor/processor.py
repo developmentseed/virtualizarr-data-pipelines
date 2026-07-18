@@ -138,6 +138,14 @@ class Processor:
             filters=None,
             dimension_names=("time", "y", "x"),
         )
+        time_coord = root.create_array(
+            "time",
+            shape=(BACKFILL_N,),
+            chunks=(BACKFILL_N,),
+            dtype="int64",
+            dimension_names=("time",),
+        )
+        time_coord[:] = np.arange(BACKFILL_N)
         return cast(str, session.commit("Initialize backfill shape"))
 
     def open_backfill_repo(self) -> Repository:
