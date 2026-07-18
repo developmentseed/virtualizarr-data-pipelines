@@ -19,13 +19,17 @@ from typing import cast
 import icechunk
 import numpy as np
 import obstore
+import virtualizarr  # noqa: F401
+import xarray as xr
 import zarr
+from virtualizarr.manifests import ChunkManifest, ManifestArray
 from zarr.codecs import BytesCodec
+from zarr.core.dtype import parse_data_type
+from zarr.core.metadata import ArrayV3Metadata
 
 # Synthetic array: N time steps, each a (Y, X) int32 chunk. One chunk per time step.
 N, Y, X = 6, 2, 3
 DTYPE = np.dtype("int32")
-CHUNK_NBYTES = Y * X * DTYPE.itemsize
 
 
 def _chunks_dir(work: str) -> str:
@@ -38,14 +42,6 @@ def _repo_dir(work: str) -> str:
 
 def _url_prefix(work: str) -> str:
     return f"file://{_chunks_dir(work)}/"
-
-
-def _source_path(work: str) -> str:
-    return f"{_chunks_dir(work)}/source.bin"
-
-
-def _source_url(work: str) -> str:
-    return f"file://{_source_path(work)}"
 
 
 def open_repo(work: str) -> icechunk.Repository:
@@ -67,13 +63,6 @@ def open_repo(work: str) -> icechunk.Repository:
     )
 
 
-def write_source(work: str) -> None:
-    """Write one source file holding N back-to-back chunk buffers; chunk t is filled
-    with the value t, so chunk t lives at byte offset t * CHUNK_NBYTES."""
-    buf = b"".join(np.full((Y, X), t, dtype=DTYPE).tobytes() for t in range(N))
-    obstore.put(obstore.store.LocalStore(), _source_path(work), buf)
-
-
 def init_backfill_store(repo: icechunk.Repository, work: str) -> None:
     """Create the `backfill` branch off main and the full-shape `foo` array
     (metadata only — no chunks written yet)."""
@@ -90,24 +79,50 @@ def init_backfill_store(repo: icechunk.Repository, work: str) -> None:
         filters=None,
         dimension_names=("time", "y", "x"),
     )
+    time_coord = root.create_array(
+        "time", shape=(N,), chunks=(N,), dtype="int64", dimension_names=("time",)
+    )
+    time_coord[:] = np.arange(N)
     session.commit("Initialize backfill shape")
 
 
-def run_worker(
-    in_path: str, indices: list[int], source_url: str, out_path: str
-) -> None:
-    """Worker body. Runs in a separate (spawned) process. Loads the coordinator-made
-    fork, writes a virtual chunk reference for each assigned time index, and pickles
-    the fork back. Does NOT open the repo — the pickled fork carries everything."""
+def _slice_vds_value(work: str, index: int, value: int) -> xr.Dataset:
+    """A one-time-step vds at coordinate `index`, filled with `value`."""
+    buf = np.full((1, Y, X), value, dtype=DTYPE).tobytes()
+    path = f"{_chunks_dir(work)}/slice_{index}_{value}"
+    obstore.put(obstore.store.LocalStore(), path, buf)
+    manifest = ChunkManifest({"0.0.0": {"path": path, "offset": 0, "length": len(buf)}})
+    zdtype = parse_data_type(DTYPE, zarr_format=3)
+    metadata = ArrayV3Metadata(
+        shape=(1, Y, X),
+        data_type=zdtype,
+        chunk_grid={"name": "regular", "configuration": {"chunk_shape": (1, Y, X)}},
+        chunk_key_encoding={"name": "default"},
+        fill_value=zdtype.default_scalar(),
+        codecs=[BytesCodec()],
+        attributes={},
+        dimension_names=("time", "y", "x"),
+        storage_transformers=None,
+    )
+    ma = ManifestArray(chunkmanifest=manifest, metadata=metadata)
+    return xr.Dataset(
+        {"foo": xr.Variable(("time", "y", "x"), ma)}, coords={"time": ("time", [index])}
+    )
+
+
+def _slice_vds(work: str, t: int) -> xr.Dataset:
+    """A one-time-step vds at coordinate t filled with value t."""
+    return _slice_vds_value(work, t, t)
+
+
+def run_worker(in_path: str, indices: list[int], work: str, out_path: str) -> None:
+    """Load the coordinator-made fork, region-write each assigned index via
+    to_icechunk(region="auto"), pickle the fork back. Runs in a spawned process."""
     with open(in_path, "rb") as f:
         fork = pickle.loads(f.read())
     for t in indices:
-        fork.store.set_virtual_ref(
-            f"foo/c/{t}/0/0",
-            source_url,
-            offset=t * CHUNK_NBYTES,
-            length=CHUNK_NBYTES,
-            validate_container=False,
+        _slice_vds(work, t).vz.to_icechunk(
+            fork.store, region="auto", validate_containers=False
         )
     with open(out_path, "wb") as f:
         f.write(pickle.dumps(fork))
@@ -132,7 +147,7 @@ def run_backfill(repo: icechunk.Repository, work: str, subsets: list[list[int]])
             f.write(pickle.dumps(session.fork()))
         proc = ctx.Process(
             target=run_worker,
-            args=(in_path, subset, _source_url(work), out_path),
+            args=(in_path, subset, work, out_path),
         )
         proc.start()
         procs.append(proc)

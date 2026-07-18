@@ -29,7 +29,6 @@ import mechanics_harness as mh
 def test_cross_process_fork_merge_commits_all_slices(tmp_path: pathlib.Path) -> None:
     work = str(tmp_path)
     repo = mh.open_repo(work)
-    mh.write_source(work)
     mh.init_backfill_store(repo, work)
 
     tip = mh.run_backfill(repo, work, subsets=[[0, 1, 2], [3, 4, 5]])
@@ -45,34 +44,21 @@ def test_overlapping_writes_last_writer_wins_no_conflict(
 ) -> None:
     work = str(tmp_path)
     repo = mh.open_repo(work)
-    mh.write_source(work)
     mh.init_backfill_store(repo, work)
 
     session = repo.writable_session("backfill")
-
-    # Two forks BOTH target chunk key foo/c/0/0/0, but point at different source
-    # offsets: fork A -> value 0, fork B -> value 5.
     fork_a = session.fork()
-    fork_a.store.set_virtual_ref(
-        "foo/c/0/0/0",
-        mh._source_url(work),
-        offset=0 * mh.CHUNK_NBYTES,
-        length=mh.CHUNK_NBYTES,
-        validate_container=False,
+    mh._slice_vds(work, 0).vz.to_icechunk(
+        fork_a.store, region="auto", validate_containers=False
     )
     fork_b = session.fork()
-    fork_b.store.set_virtual_ref(
-        "foo/c/0/0/0",
-        mh._source_url(work),
-        offset=5 * mh.CHUNK_NBYTES,
-        length=mh.CHUNK_NBYTES,
-        validate_container=False,
+    # same index 0, different value 5
+    mh._slice_vds_value(work, index=0, value=5).vz.to_icechunk(
+        fork_b.store, region="auto", validate_containers=False
     )
 
-    # No conflict raised on merge or commit.
     session.merge(fork_a, fork_b)
-    session.commit("overlapping writes")
+    session.commit("overlapping region writes")
 
     arr = zarr.open_group(repo.readonly_session("backfill").store, mode="r")["foo"]
-    # Last fork merged (B) wins.
     assert (np.asarray(arr[0]) == 5).all()
