@@ -23,9 +23,6 @@ CHUNK_DIRECTORY_URL_PREFIX = f"file://{CHUNK_DIR}/"
 # Backfill synthetic dataset: N time steps, each a (Y, X) int32 chunk.
 BACKFILL_N, BACKFILL_Y, BACKFILL_X = 6, 2, 3
 BACKFILL_DTYPE = np.dtype("int32")
-BACKFILL_CHUNK_NBYTES = BACKFILL_Y * BACKFILL_X * BACKFILL_DTYPE.itemsize
-BACKFILL_SOURCE_PATH = f"{CHUNK_DIR}/backfill_source.bin"
-BACKFILL_SOURCE_URL = f"file://{BACKFILL_SOURCE_PATH}"
 
 
 def synthetic_vds(date: str) -> xr.Dataset:
@@ -117,14 +114,6 @@ class Processor:
         return str(snapshot)
 
     def initialize_backfill_store(self, repo: Repository) -> str:
-        # Write the synthetic source: N back-to-back chunks, chunk t filled with
-        # value t, so chunk t is at byte offset t * BACKFILL_CHUNK_NBYTES.
-        buf = b"".join(
-            np.full((BACKFILL_Y, BACKFILL_X), t, dtype=BACKFILL_DTYPE).tobytes()
-            for t in range(BACKFILL_N)
-        )
-        obstore.put(obstore.store.LocalStore(), BACKFILL_SOURCE_PATH, buf)
-
         repo.create_branch("backfill", repo.lookup_branch("main"))
         session = repo.writable_session("backfill")
         root = zarr.open_group(session.store, mode="a")
@@ -184,22 +173,45 @@ class Processor:
         # Real implementations would parse their own scheme (e.g. a date).
         return {"time": int(file_key)}
 
+    def _backfill_slice_vds(self, t: int) -> xr.Dataset:
+        """A one-time-step virtual dataset for backfill index t, carrying the
+        matching `time` coordinate so to_icechunk(region="auto") can place it."""
+        buf = np.full((1, BACKFILL_Y, BACKFILL_X), t, dtype=BACKFILL_DTYPE).tobytes()
+        filepath = f"{CHUNK_DIR}/backfill_slice_{t}"
+        obstore.put(obstore.store.LocalStore(), filepath, buf)
+        manifest = ChunkManifest(
+            {"0.0.0": {"path": filepath, "offset": 0, "length": len(buf)}}
+        )
+        zdtype = parse_data_type(BACKFILL_DTYPE, zarr_format=3)
+        metadata = ArrayV3Metadata(
+            shape=(1, BACKFILL_Y, BACKFILL_X),
+            data_type=zdtype,
+            chunk_grid={
+                "name": "regular",
+                "configuration": {"chunk_shape": (1, BACKFILL_Y, BACKFILL_X)},
+            },
+            chunk_key_encoding={"name": "default"},
+            fill_value=zdtype.default_scalar(),
+            codecs=[BytesCodec()],
+            attributes={},
+            dimension_names=("time", "y", "x"),
+            storage_transformers=None,
+        )
+        ma = ManifestArray(chunkmanifest=manifest, metadata=metadata)
+        return xr.Dataset(
+            {"foo": xr.Variable(("time", "y", "x"), ma)},
+            coords={"time": ("time", [t])},
+        )
+
     def process_backfill_file(self, file_key: str, fork: ForkSession) -> bool:
         try:
             t = self.region_for(file_key)["time"]
-            fork.store.set_virtual_ref(
-                f"foo/c/{t}/0/0",
-                BACKFILL_SOURCE_URL,
-                offset=t * BACKFILL_CHUNK_NBYTES,
-                length=BACKFILL_CHUNK_NBYTES,
-                validate_container=False,
+            self._backfill_slice_vds(t).vz.to_icechunk(
+                fork.store, region="auto", validate_containers=False
             )
             return True
         except Exception:
-            # Catch parse/region errors and I/O failures from set_virtual_ref,
-            # returning False to mirror process_file's bool contract. (Broader
-            # than process_file's `except Error` because set_virtual_ref can
-            # raise icechunk/object-store errors, not just copy.Error.)
+            # Catch parse/region errors and I/O failures from to_icechunk.
             return False
 
     def garbage_collect(self, expiry_time: datetime) -> icechunk.GCSummary:

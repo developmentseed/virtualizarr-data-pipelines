@@ -78,9 +78,11 @@ class VirtualizarrProcessor(Protocol):
         the base snapshot id.
 
         The store is declared at its full extent up front because backfill writes
-        disjoint regions via set_virtual_ref rather than appending. The session
-        MUST have no uncommitted changes after this returns, so that forks taken
-        from a fresh session share the committed branch-tip snapshot as their base.
+        disjoint regions via region writes rather than appending. It also writes
+        the coordinate arrays (e.g. `time`) that region writes rely on to align
+        each per-file virtual dataset to the correct position. The session MUST
+        have no uncommitted changes after this returns, so that forks taken from
+        a fresh session share the committed branch-tip snapshot as their base.
 
         The `backfill` branch must not already exist. This method is intended to
         be called exactly once per backfill run.
@@ -133,8 +135,9 @@ class VirtualizarrProcessor(Protocol):
 
     def process_backfill_file(self, file_key: str, fork: ForkSession) -> bool:
         """
-        Write the file's virtual references into the fork's store at
-        region_for(file_key) via set_virtual_ref. Must NOT commit.
+        Write a per-file virtual dataset into the fork's store at
+        region_for(file_key) via `vz.to_icechunk(store, region="auto")`.
+        Must NOT commit.
 
         Parameters
         ----------
