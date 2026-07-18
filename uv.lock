@@ -1598,7 +1598,7 @@ dependencies = [
 requires-dist = [
     { name = "icechunk", specifier = ">=2.1" },
     { name = "virtualizarr", specifier = ">=2.7" },
-    { name = "zarr", specifier = ">=3.1.1" },
+    { name = "zarr", specifier = ">=3.2.1" },
 ]
 
 [[package]]

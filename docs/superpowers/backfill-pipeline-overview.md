@@ -22,8 +22,10 @@ mechanics regression tests in `tests/backfill_mechanics/` (which graduated the t
 unique proofs — real cross-process `spawn` fork/merge, and merge's last-writer-wins
 overlap behaviour — out of the original disposable spike):
 
-- Store is created at full shape; workers write disjoint chunks via `set_virtual_ref`
-  (VirtualiZarr `to_icechunk` only appends, so it can't target a region).
+- Store is created at full shape (with coordinates); workers write disjoint regions via
+  `vds.vz.to_icechunk(fork.store, region="auto")`, which aligns each per-file virtual dataset to
+  the store by coordinate. (This replaced the earlier manual `set_virtual_ref` approach once
+  VirtualiZarr 2.7 added `region=` to `to_icechunk`; before that, `to_icechunk` only appended.)
 - `Session.fork()` produces a picklable `ForkSession`; a writable `Session` is NOT picklable and
   a `ForkSession` cannot commit.
 - A **fresh** `writable_session` (in a later process) can `merge(*forks)` and commit, as long as
