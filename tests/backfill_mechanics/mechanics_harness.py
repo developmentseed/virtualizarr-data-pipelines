@@ -61,7 +61,9 @@ def open_repo(work: str) -> icechunk.Repository:
     return icechunk.Repository.open_or_create(
         storage=storage,
         config=config,
-        authorize_virtual_chunk_access={_url_prefix(work): None},
+        authorize_virtual_chunk_access={
+            _url_prefix(work): icechunk.credentials.LocalFileSystemAccess
+        },
     )
 
 

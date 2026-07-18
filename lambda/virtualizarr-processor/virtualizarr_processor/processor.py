@@ -83,7 +83,9 @@ class Processor:
         repo = icechunk.Repository.open_or_create(
             storage=storage,
             config=config,
-            authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+            authorize_virtual_chunk_access={
+                CHUNK_DIRECTORY_URL_PREFIX: icechunk.credentials.LocalFileSystemAccess
+            },
         )
         # Get only up to 2 commits to check if the repository is new
         history = list(islice(repo.ancestry(branch="main"), 2))
@@ -164,7 +166,9 @@ class Processor:
         return icechunk.Repository.open_or_create(
             storage=storage,
             config=config,
-            authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+            authorize_virtual_chunk_access={
+                CHUNK_DIRECTORY_URL_PREFIX: icechunk.credentials.LocalFileSystemAccess
+            },
         )
 
     def region_for(self, file_key: str) -> Mapping[str, int]:

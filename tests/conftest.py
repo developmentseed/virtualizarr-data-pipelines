@@ -71,7 +71,9 @@ def create_repo() -> icechunk.Repository:
     repo = icechunk.Repository.open_or_create(
         storage=storage,
         config=config,
-        authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+        authorize_virtual_chunk_access={
+            CHUNK_DIRECTORY_URL_PREFIX: icechunk.credentials.LocalFileSystemAccess
+        },
     )
     return repo
 
@@ -110,7 +112,9 @@ def backfill_repo(tmp_path: pathlib.Path) -> icechunk.Repository:
     repo = icechunk.Repository.open_or_create(
         storage=storage,
         config=config,
-        authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+        authorize_virtual_chunk_access={
+            CHUNK_DIRECTORY_URL_PREFIX: icechunk.credentials.LocalFileSystemAccess
+        },
     )
     session = repo.writable_session("main")
     zarr.open_group(session.store, mode="a").create_group("placeholder")
