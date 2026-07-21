@@ -139,11 +139,14 @@ class BackfillPipeline(Construct):
             ),
             item_batcher=sfn.ItemBatcher(
                 max_items_per_batch=max_items_per_batch,
+                # ItemBatcher.BatchInput does NOT convert JsonPath values into
+                # ".$"-suffixed keys (unlike TaskInput.from_object) — a JsonPath
+                # value here renders as a literal constant, so the worker would
+                # receive the string "$.forkResult.fork_in_uri". Write the ".$"
+                # path keys explicitly so Step Functions resolves them.
                 batch_input={
-                    "fork_in_uri": sfn.JsonPath.string_at("$.forkResult.fork_in_uri"),
-                    "forks_out_prefix": sfn.JsonPath.string_at(
-                        "$.forkResult.forks_out_prefix"
-                    ),
+                    "fork_in_uri.$": "$.forkResult.fork_in_uri",
+                    "forks_out_prefix.$": "$.forkResult.forks_out_prefix",
                 },
             ),
             max_concurrency=max_concurrency,

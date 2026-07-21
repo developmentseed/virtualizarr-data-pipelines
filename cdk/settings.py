@@ -17,7 +17,9 @@ class StackSettings(BaseSettings):
     PROJECT_NAME: str = "virtualizarr-data-pipelines"
     STACK_NAME: str = "virtualizarr-data-pipelines"
     STAGE: Literal["dev", "prod"]
-    ACCOUNT_ID: str
+    # Optional: when blank, app.py falls back to CDK_DEFAULT_ACCOUNT (the account
+    # of the active AWS credentials) so synth/deploy still resolve an environment.
+    ACCOUNT_ID: str | None = None
     ACCOUNT_REGION: str = "us-east-1"
     ICECHUNK_BUCKET_NAME: str = "icechunk-outuput"
     ICECHUNK_BUCKET: str | None = None

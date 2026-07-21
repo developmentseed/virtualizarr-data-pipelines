@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 from collections.abc import Mapping
@@ -16,6 +17,8 @@ from virtualizarr.manifests import ChunkManifest, ManifestArray
 from zarr.codecs import BytesCodec
 from zarr.core.dtype import parse_data_type
 from zarr.core.metadata import ArrayV3Metadata
+
+logger = logging.getLogger(__name__)
 
 CHUNK_DIR = os.path.realpath(tempfile.gettempdir())
 CHUNK_DIRECTORY_URL_PREFIX = f"file://{CHUNK_DIR}/"
@@ -214,7 +217,14 @@ class Processor:
             )
             return True
         except Exception:
-            # Catch parse/region errors and I/O failures from to_icechunk.
+            # Catch parse/region errors and I/O failures from to_icechunk, but log
+            # the real cause first — otherwise the worker only reports a generic
+            # "process_backfill_file failed" and the underlying error is lost.
+            # A real (network-reading) processor should also retry the granule read
+            # here with backoff, since transient object-store / auth throttling under
+            # a large backfill's concurrency is otherwise fatal. logger.exception
+            # includes the traceback.
+            logger.exception("process_backfill_file failed for %s", file_key)
             return False
 
     def garbage_collect(self, expiry_time: datetime) -> icechunk.GCSummary:

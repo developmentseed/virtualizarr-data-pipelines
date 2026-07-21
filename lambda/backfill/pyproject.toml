@@ -11,8 +11,13 @@ dependencies = [
     "virtualizarr-processor",
 ]
 
-[tool.uv.sources]
-virtualizarr-processor = { path = "../virtualizarr-processor", editable = true }
+# NB: no [tool.uv.sources] for virtualizarr-processor here. backfill-handlers is a
+# uv workspace member (the root depends on it for tests) and the root already pins
+# virtualizarr-processor as an editable path source for local dev. Re-declaring it
+# here makes uv see conflicting URLs for the same package. The Lambda image instead
+# installs both local paths explicitly and non-editably in the Dockerfile, so the
+# processor's real files (not an editable .pth link to the build stage) land in
+# /var/task.
 
 [build-system]
 requires = ["hatchling"]

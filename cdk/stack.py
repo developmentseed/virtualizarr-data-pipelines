@@ -1,6 +1,7 @@
 from typing import Any
 
 from aws_cdk import (
+    CfnOutput,
     CustomResource,
     Duration,
     Stack,
@@ -87,6 +88,14 @@ class VirtualizarrSqsStack(Stack):
                 bucket_name=settings.ICECHUNK_BUCKET_NAME,
             )
 
+        CfnOutput(
+            self,
+            "IcechunkBucketName",
+            value=self.icechunk_bucket.bucket_name,
+            description="Icechunk store bucket. Upload the backfill inventory here "
+            "(the partition Lambda has read access to this bucket).",
+        )
+
         if settings.SNS_TOPIC:
             self.sns_topic = sns.Topic.from_topic_arn(
                 self,
@@ -116,7 +125,7 @@ class VirtualizarrSqsStack(Stack):
 
         self.queue.grant_consume_messages(self.process_messages_lambda)
 
-        # Grant Lambda permissions to read from S3 (for processing HRRR files)
+        # Grant Lambda permission to read the source data files from S3.
         self.process_messages_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -252,4 +261,12 @@ class VirtualizarrSqsStack(Stack):
                 partition_size=settings.BACKFILL_PARTITION_SIZE,
                 max_items_per_batch=settings.BACKFILL_MAX_ITEMS_PER_BATCH,
                 max_concurrency=settings.BACKFILL_MAX_CONCURRENCY,
+            )
+
+            CfnOutput(
+                self,
+                "BackfillStateMachineArn",
+                value=self.backfill_pipeline.state_machine.state_machine_arn,
+                description="Start a backfill with: aws stepfunctions start-execution "
+                '--state-machine-arn <this> --input \'{"inventory_uri": "s3://..."}\'',
             )

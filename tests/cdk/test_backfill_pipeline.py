@@ -102,6 +102,9 @@ def test_state_machine_shape() -> None:
     # worker event reshape (Items -> file_keys, BatchInput carries the constants)
     assert '"file_keys.$":"$.Items"' in asl
     assert "$.BatchInput.fork_in_uri" in asl
+    # ItemBatcher.BatchInput must use ".$" path keys so the fork URIs resolve at
+    # runtime rather than being passed as the literal string "$.forkResult...".
+    assert '"fork_in_uri.$":"$.forkResult.fork_in_uri"' in asl
     # reduce is reshaped to the flat event its handler expects
     assert '"forks_out_prefix.$":"$.forkResult.forks_out_prefix"' in asl
     # run_prefix derives from the execution name
