@@ -41,8 +41,8 @@ For existing archival data in S3 the simplest approach is enabling S3 inventorie
 
 For S3 buckets where new data is continually added you can enable an [SNS topic for new data](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ways-to-add-notification-config-to-bucket.html) which the Virtualizarr Data Pipelines queue can subscribe to.
 <a href="./docs/architecture.png"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/architecture-dark.png">
-  <img alt="Architecture" src="./docs/architecture.png">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/architecture.png">
+  <img alt="Architecture" src="./docs/architecture-dark.png">
 </picture></a>
 
 ### Configuring the deployment :wrench:
