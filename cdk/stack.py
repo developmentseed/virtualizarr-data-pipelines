@@ -147,6 +147,7 @@ class VirtualizarrSqsStack(Stack):
                 batch_size=settings.SQS_BATCH_SIZE,
                 report_batch_item_failures=True,
                 max_concurrency=settings.MAX_CONCURRENCY,
+                enabled=settings.FORWARD_QUEUE_ENABLED,
             )
         )
 
