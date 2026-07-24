@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import icechunk
 from icechunk import Repository, Session
-from virtualizarr_processor.processor import Processor
+from virtualizarr_processor.processor import Processor, synthetic_vds
 from virtualizarr_processor.typing import VirtualizarrProcessor
 
 
@@ -25,6 +25,12 @@ def test_process_file(icechunk_session: Session) -> None:
     processor = Processor()
     result = processor.process_file(file_key="2024-01-02", session=icechunk_session)
     assert result
+
+
+def test_validate_dataset() -> None:
+    processor = Processor()
+    validated = processor.validate_dataset(synthetic_vds("2024-01-03"))
+    assert validated
 
 
 def test_commit_processed_files(icechunk_session: Session) -> None:

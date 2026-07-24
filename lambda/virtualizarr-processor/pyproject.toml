@@ -5,6 +5,7 @@ description = "Module for ingesting virtualizarr data to Icechunk"
 requires-python = ">=3.11"
 dependencies = [
     "icechunk",
+    "pandera[xarray]>=0.31.0",
     "virtualizarr",
 ]
 
