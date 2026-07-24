@@ -29,3 +29,12 @@ def test_forward_queue_enabled_explicit_value_is_honored() -> None:
         FORWARD_QUEUE_ENABLED=True,
     )
     assert settings.FORWARD_QUEUE_ENABLED is True
+
+
+def test_forward_queue_disabled_explicit_with_backfill_off() -> None:
+    settings = StackSettings(
+        STAGE="dev",
+        ACCOUNT_ID="111111111111",
+        FORWARD_QUEUE_ENABLED=False,
+    )
+    assert settings.FORWARD_QUEUE_ENABLED is False
