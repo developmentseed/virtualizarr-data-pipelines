@@ -1,7 +1,6 @@
 import logging
 import os
 import tempfile
-from collections.abc import Mapping
 from copy import Error
 from datetime import datetime
 from itertools import islice
@@ -171,11 +170,6 @@ class Processor:
             },
         )
 
-    def region_for(self, file_key: str) -> Mapping[str, int]:
-        # Synthetic keys are the integer time index as a string ("0".."5").
-        # Real implementations would parse their own scheme (e.g. a date).
-        return {"time": int(file_key)}
-
     def _backfill_slice_vds(self, t: int) -> xr.Dataset:
         """A one-time-step virtual dataset for backfill index t, carrying the
         matching `time` coordinate so to_icechunk(region="auto") can place it."""
@@ -211,7 +205,9 @@ class Processor:
 
     def process_backfill_file(self, file_key: str, fork: ForkSession) -> bool:
         try:
-            t = self.region_for(file_key)["time"]
+            # Synthetic keys are the integer time index as a string ("0".."5").
+            # A real processor parses the source file for its own coordinate.
+            t = int(file_key)
             self._backfill_slice_vds(t).vz.to_icechunk(
                 fork.store, region="auto", validate_containers=False
             )

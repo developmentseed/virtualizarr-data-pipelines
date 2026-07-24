@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
@@ -114,30 +113,11 @@ class VirtualizarrProcessor(Protocol):
         """
         ...
 
-    def region_for(self, file_key: str) -> Mapping[str, int]:
-        """
-        Map a file key to its absolute index/region in the pre-sized array.
-
-        Must be deterministic and side-effect-free so the partitioner can call it
-        to assign and verify disjoint partitions.
-
-        Parameters
-        ----------
-            file_key: An identifier for the source file. The scheme is up to the
-                implementation (e.g. an S3 object key, a date string, or an
-                integer index) as long as it maps deterministically to a region.
-        Returns
-        -------
-        Mapping[str, int]
-            A per-dimension index map, e.g. {"time": 42}.
-        """
-        ...
-
     def process_backfill_file(self, file_key: str, fork: ForkSession) -> bool:
         """
-        Write a per-file virtual dataset into the fork's store at
-        region_for(file_key) via `vz.to_icechunk(store, region="auto")`.
-        Must NOT commit.
+        Write a per-file virtual dataset into the fork's store via
+        `vz.to_icechunk(store, region="auto")`, which aligns the dataset to its
+        target position by coordinate. Must NOT commit.
 
         Parameters
         ----------

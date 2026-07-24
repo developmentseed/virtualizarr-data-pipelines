@@ -12,12 +12,6 @@ def test_backfill_repo_has_main_branch(backfill_repo: icechunk.Repository) -> No
     assert "main" in backfill_repo.list_branches()
 
 
-def test_region_for_is_deterministic() -> None:
-    processor = Processor()
-    assert processor.region_for("3") == {"time": 3}
-    assert processor.region_for("3") == processor.region_for("3")
-
-
 def test_initialize_backfill_store_creates_full_shape(
     backfill_repo: icechunk.Repository,
 ) -> None:
