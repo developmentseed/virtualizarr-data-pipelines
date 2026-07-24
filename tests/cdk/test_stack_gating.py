@@ -38,18 +38,18 @@ def test_backfill_enabled_creates_state_machine() -> None:
 
 
 def test_forward_queue_enabled_when_backfill_off() -> None:
-    _template(backfill=False).has_resource_properties(
-        "AWS::Lambda::EventSourceMapping", {"Enabled": True}
-    )
+    t = _template(backfill=False)
+    t.resource_count_is("AWS::Lambda::EventSourceMapping", 1)
+    t.has_resource_properties("AWS::Lambda::EventSourceMapping", {"Enabled": True})
 
 
 def test_forward_queue_disabled_when_backfill_on() -> None:
-    _template(backfill=True).has_resource_properties(
-        "AWS::Lambda::EventSourceMapping", {"Enabled": False}
-    )
+    t = _template(backfill=True)
+    t.resource_count_is("AWS::Lambda::EventSourceMapping", 1)
+    t.has_resource_properties("AWS::Lambda::EventSourceMapping", {"Enabled": False})
 
 
 def test_forward_queue_explicit_enable_with_backfill_on() -> None:
-    _template(backfill=True, forward=True).has_resource_properties(
-        "AWS::Lambda::EventSourceMapping", {"Enabled": True}
-    )
+    t = _template(backfill=True, forward=True)
+    t.resource_count_is("AWS::Lambda::EventSourceMapping", 1)
+    t.has_resource_properties("AWS::Lambda::EventSourceMapping", {"Enabled": True})
