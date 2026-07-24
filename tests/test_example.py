@@ -35,6 +35,7 @@ def test_commit_processed_files(icechunk_session: Session) -> None:
 
 def test_garbage_collect() -> None:
     processor = Processor()
+    repo = processor.initialize_repo()
     expiry_time = datetime.now(timezone.utc) - timedelta(days=2)
-    gcs = processor.garbage_collect(expiry_time=expiry_time)
+    gcs = processor.garbage_collect(repo=repo, expiry_time=expiry_time)
     assert isinstance(gcs, icechunk.GCSummary)
