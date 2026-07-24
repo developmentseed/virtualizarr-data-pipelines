@@ -61,11 +61,12 @@ uv run pytest
 
 #### Review your infrastructure before deploying
 ```
-uv run --env-file .env.sample cdk synth
-
+cp .env.sample .env
+uv run --env-file .env cdk synth  # after customizing .env
 ```
+
 #### Deploy the CDK infrastructure.
-```
 
-uv run --env-file .env.sample cdk deploy
+```
+uv run --env-file .env cdk deploy
 ```
