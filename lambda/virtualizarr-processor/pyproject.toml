@@ -2,10 +2,11 @@
 name = "virtualizarr-processor"
 version = "0.1.0"
 description = "Module for ingesting virtualizarr data to Icechunk"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
-    "icechunk",
-    "virtualizarr",
+    "icechunk>=2.1",
+    "virtualizarr>=2.7",
+    "zarr>=3.2.1",
 ]
 
 [build-system]

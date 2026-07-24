@@ -1,6 +1,7 @@
 import os
 from typing import Any, Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 print("STAGE from env:", os.getenv("STAGE"))
@@ -17,7 +18,9 @@ class StackSettings(BaseSettings):
     PROJECT_NAME: str = "virtualizarr-data-pipelines"
     STACK_NAME: str = "virtualizarr-data-pipelines"
     STAGE: Literal["dev", "prod"]
-    ACCOUNT_ID: str
+    # Optional: when blank, app.py falls back to CDK_DEFAULT_ACCOUNT (the account
+    # of the active AWS credentials) so synth/deploy still resolve an environment.
+    ACCOUNT_ID: str | None = None
     ACCOUNT_REGION: str = "us-east-1"
     ICECHUNK_BUCKET_NAME: str = "icechunk-outuput"
     ICECHUNK_BUCKET: str | None = None
@@ -40,3 +43,20 @@ class StackSettings(BaseSettings):
 
     # Cluster scaling max
     BATCH_MAX_VCPU: int = 10
+
+    # Backfill (partitioned fork/merge) pipeline
+    BACKFILL_ENABLED: bool = False
+    BACKFILL_PARTITION_SIZE: int = 500
+    BACKFILL_MAX_ITEMS_PER_BATCH: int = 10
+    BACKFILL_MAX_CONCURRENCY: int = 50
+
+    # Forward SQS consumer. `None` resolves in the validator below:
+    #   backfill enabled  -> default disabled (bootstrap via backfill, enable later)
+    #   backfill disabled -> default enabled  (normal forward-only deployment)
+    FORWARD_QUEUE_ENABLED: bool | None = None
+
+    @model_validator(mode="after")
+    def _resolve_forward_queue_enabled(self) -> "StackSettings":
+        if self.FORWARD_QUEUE_ENABLED is None:
+            self.FORWARD_QUEUE_ENABLED = not self.BACKFILL_ENABLED
+        return self
