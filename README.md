@@ -97,6 +97,16 @@ Backfill is configured through the same [settings module](./cdk/settings.py) / `
 - **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store and the per-run fork artifacts.
 - **DATA_BUCKET_NAME** - the source bucket workers read files from.
 
+#### Running Backfill Processing
+To start backfill processing run:
+```bash
+./scripts/start_backfill.sh <execution-name> <inventory-uri>
+```
+Where `execution-name` is a unique id to identify your Step Function run and
+`inventory-uri` is an s3 path to `json` file containing an array of string keys
+for the files to be processed.  The inventory file must be in a bucket that the backfill lambda functions have permission to access.
+
+
 ### Forward Processing :arrow_forward:
 Forward processing handles **new production files as they become available**.
 It uses an SQS queue to receive notifications about new files and control the
