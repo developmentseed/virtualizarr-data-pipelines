@@ -53,3 +53,15 @@ def test_forward_queue_explicit_enable_with_backfill_on() -> None:
     t = _template(backfill=True, forward=True)
     t.resource_count_is("AWS::Lambda::EventSourceMapping", 1)
     t.has_resource_properties("AWS::Lambda::EventSourceMapping", {"Enabled": True})
+
+
+def _resource_ids(template: Template) -> str:
+    return " ".join(template.to_json()["Resources"].keys()).lower()
+
+
+def test_backfill_disabled_creates_initialize_lambda() -> None:
+    assert "initializeicechunk" in _resource_ids(_template(backfill=False))
+
+
+def test_backfill_enabled_skips_initialize_lambda() -> None:
+    assert "initializeicechunk" not in _resource_ids(_template(backfill=True))
