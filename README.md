@@ -40,7 +40,9 @@ Virtualizarr Data Pipelines is only responsible for creating a store and process
 For existing archival data in S3 the simplest approach is enabling S3 inventories on the bucket and using [Athena to query the inventories](https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-inventory-athena-query.html) and push messages onto the queue in batches of a manageable size.
 
 For S3 buckets where new data is continually added you can enable an [SNS topic for new data](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ways-to-add-notification-config-to-bucket.html) which the Virtualizarr Data Pipelines queue can subscribe to.
-[![Architecture](./docs/architecture.png)](./docs/architecture.png)
+
+![Architecture](./docs/architecture-dark.png#gh-dark-mode-only)
+![Architecture](./docs/architecture.png#gh-light-mode-only)
 
 ### Configuring the deployment :wrench:
 Virtualizarr Data Pipelines uses a strongly-typed [settings module](./cdk/settings.py) that allows you to configure things like bucket names and external SNS topics used by the CDK infrastructure when you deploy it.  Many of the settings include defaults but you can also specify and override values with a `.env` file.  A [sample file](./.env.sample) is provided as an example.
