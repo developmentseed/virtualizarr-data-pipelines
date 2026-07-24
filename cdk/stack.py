@@ -32,6 +32,9 @@ from aws_cdk import (
     aws_s3 as s3,
 )
 from aws_cdk import (
+    aws_secretsmanager as secretsmanager,
+)
+from aws_cdk import (
     aws_sns as sns,
 )
 from aws_cdk import (
@@ -96,6 +99,26 @@ class VirtualizarrSqsStack(Stack):
             "(the partition Lambda has read access to this bucket).",
         )
 
+        # Shared processor env: resolved by virtualizarr_processor at runtime to
+        # open the icechunk store (ICECHUNK_BUCKET set => S3) and to read protected
+        # GES DISC granules via Earthdata (EARTHDATA_SECRET_ARN).
+        self.processor_env = {
+            "ICECHUNK_BUCKET": self.icechunk_bucket.bucket_name,
+            "ICECHUNK_REGION": settings.ACCOUNT_REGION,
+        }
+        if settings.ICECHUNK_PREFIX:
+            self.processor_env["ICECHUNK_PREFIX"] = settings.ICECHUNK_PREFIX
+        if settings.EARTHDATA_SECRET_ARN:
+            self.processor_env["EARTHDATA_SECRET_ARN"] = settings.EARTHDATA_SECRET_ARN
+
+        self.earthdata_secret = (
+            secretsmanager.Secret.from_secret_complete_arn(
+                self, "EarthdataSecret", settings.EARTHDATA_SECRET_ARN
+            )
+            if settings.EARTHDATA_SECRET_ARN
+            else None
+        )
+
         if settings.SNS_TOPIC:
             self.sns_topic = sns.Topic.from_topic_arn(
                 self,
@@ -121,9 +144,12 @@ class VirtualizarrSqsStack(Stack):
             architecture=_lambda.Architecture.X86_64,
             timeout=Duration.minutes(5),
             memory_size=2048,
+            environment=dict(self.processor_env),
         )
 
         self.queue.grant_consume_messages(self.process_messages_lambda)
+        if self.earthdata_secret is not None:
+            self.earthdata_secret.grant_read(self.process_messages_lambda)
 
         # Grant Lambda permission to read the source data files from S3.
         self.process_messages_lambda.add_to_role_policy(
@@ -166,9 +192,12 @@ class VirtualizarrSqsStack(Stack):
                 architecture=_lambda.Architecture.X86_64,
                 timeout=Duration.minutes(5),
                 memory_size=2048,
+                environment=dict(self.processor_env),
             )
 
             self.icechunk_bucket.grant_read_write(self.initialize_icechunk_lambda)
+            if self.earthdata_secret is not None:
+                self.earthdata_secret.grant_read(self.initialize_icechunk_lambda)
 
             if settings.ICECHUNK_BUCKET:
                 # Trigger it once on first deploy
@@ -240,8 +269,11 @@ class VirtualizarrSqsStack(Stack):
                 image_asset=self.gc_image_asset,
                 memory_mb=2000,
                 retry_attempts=1,
+                environment=dict(self.processor_env),
             )
             self.icechunk_bucket.grant_read_write(self.gc_job.role)
+            if self.earthdata_secret is not None:
+                self.earthdata_secret.grant_read(self.gc_job.role)
 
             self.cron_rule = events.Rule(
                 self,
@@ -266,10 +298,12 @@ class VirtualizarrSqsStack(Stack):
                 self,
                 "BackfillPipeline",
                 icechunk_bucket=self.icechunk_bucket,
+                icechunk_prefix=settings.ICECHUNK_PREFIX,
                 data_bucket_name=settings.DATA_BUCKET_NAME,
                 partition_size=settings.BACKFILL_PARTITION_SIZE,
                 max_items_per_batch=settings.BACKFILL_MAX_ITEMS_PER_BATCH,
                 max_concurrency=settings.BACKFILL_MAX_CONCURRENCY,
+                earthdata_secret_arn=settings.EARTHDATA_SECRET_ARN,
             )
 
             CfnOutput(

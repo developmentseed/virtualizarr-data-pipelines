@@ -5,11 +5,17 @@ from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lmb
 from aws_cdk import aws_s3 as s3
+from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_stepfunctions as sfn
 from aws_cdk import aws_stepfunctions_tasks as tasks
 from constructs import Construct
 
 _ACTIONS = ["partition", "init", "fork", "worker", "reduce", "promote"]
+
+# Actions whose handler opens the icechunk repo and therefore needs Earthdata
+# credentials to authorize reading protected GES DISC virtual chunks. ``partition``
+# only reads the inventory object, so it is excluded.
+_REPO_ACTIONS = ["init", "fork", "worker", "reduce", "promote"]
 
 
 class BackfillPipeline(Construct):
@@ -23,13 +29,35 @@ class BackfillPipeline(Construct):
         construct_id: str,
         *,
         icechunk_bucket: s3.IBucket,
+        icechunk_prefix: str | None,
         data_bucket_name: str,
+        earthdata_secret_arn: str | None = None,
         partition_size: int,
         max_items_per_batch: int,
         max_concurrency: int,
         **kwargs: Any,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Icechunk >=2.1.0 refuses to create a repo at an empty prefix, so the
+        # init handler needs ICECHUNK_PREFIX to reach the Lambda. Only include env
+        # keys when set so synth doesn't inject a None value.
+        env = {
+            "ICECHUNK_BUCKET": icechunk_bucket.bucket_name,
+            "ICECHUNK_REGION": Aws.REGION,
+        }
+        if icechunk_prefix:
+            env["ICECHUNK_PREFIX"] = icechunk_prefix
+        if earthdata_secret_arn:
+            env["EARTHDATA_SECRET_ARN"] = earthdata_secret_arn
+
+        earthdata_secret = (
+            secretsmanager.Secret.from_secret_complete_arn(
+                self, "EarthdataSecret", earthdata_secret_arn
+            )
+            if earthdata_secret_arn
+            else None
+        )
 
         self.functions: dict[str, lmb.DockerImageFunction] = {}
         for action in _ACTIONS:
@@ -45,12 +73,12 @@ class BackfillPipeline(Construct):
                 architecture=lmb.Architecture.X86_64,
                 timeout=Duration.minutes(15),
                 memory_size=2048,
-                environment={
-                    "ICECHUNK_BUCKET": icechunk_bucket.bucket_name,
-                    "ICECHUNK_REGION": Aws.REGION,
-                },
+                environment=dict(env),
             )
             icechunk_bucket.grant_read_write(fn)
+            # Handlers that open the repo need to read the Earthdata secret.
+            if earthdata_secret is not None and action in _REPO_ACTIONS:
+                earthdata_secret.grant_read(fn)
             self.functions[action] = fn
 
         # worker parses source files; partition reads the inventory object.

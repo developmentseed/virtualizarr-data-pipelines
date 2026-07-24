@@ -24,11 +24,20 @@ class StackSettings(BaseSettings):
     ACCOUNT_REGION: str = "us-east-1"
     ICECHUNK_BUCKET_NAME: str = "icechunk-outuput"
     ICECHUNK_BUCKET: str | None = None
+    # Key prefix for this dataset's repo. Icechunk >=2.1.0 refuses to CREATE a
+    # repo at an empty prefix (bucket root), so this must be non-empty to bootstrap
+    # a new store. Passed into the Lambda env as ICECHUNK_PREFIX.
+    ICECHUNK_PREFIX: str | None = None
     DATA_BUCKET_NAME: str | None = None
     PROJECT: str = "virtualizarr-data-pipelines"
     SNS_TOPIC: str | None = None
     MAX_CONCURRENCY: int = 50
     SQS_BATCH_SIZE: int = 10
+
+    # ARN of the Secrets Manager secret holding Earthdata {username, password}.
+    # Optional: required only for reading protected GES DISC granules. When unset,
+    # no secret resource or IAM grant is created.
+    EARTHDATA_SECRET_ARN: str | None = None
 
     # Freguency in days to run garbage collection.
     GARBAGE_COLLECTION_FREQUENCY: int | None = None
