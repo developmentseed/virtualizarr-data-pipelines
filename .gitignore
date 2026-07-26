@@ -221,3 +221,5 @@ __marimo__/
 #/target
 
 /cdk.out
+
+node_modules/
