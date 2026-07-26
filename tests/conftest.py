@@ -1,4 +1,5 @@
 import os
+import pathlib
 import tempfile
 
 import icechunk
@@ -6,6 +7,7 @@ import numpy as np
 import obstore
 import pytest
 import xarray as xr
+import zarr
 from virtualizarr.manifests import ChunkManifest, ManifestArray
 from zarr.codecs import BytesCodec
 from zarr.core.dtype import parse_data_type
@@ -69,7 +71,9 @@ def create_repo() -> icechunk.Repository:
     repo = icechunk.Repository.open_or_create(
         storage=storage,
         config=config,
-        authorize_virtual_chunk_access={CHUNK_DIRECTORY_URL_PREFIX: None},
+        authorize_virtual_chunk_access={
+            CHUNK_DIRECTORY_URL_PREFIX: icechunk.credentials.LocalFileSystemAccess
+        },
     )
     return repo
 
@@ -90,3 +94,29 @@ def icechunk_repo() -> icechunk.Repository:
 @pytest.fixture(scope="function")
 def icechunk_session() -> icechunk.Session:
     return create_session()
+
+
+@pytest.fixture(scope="function")
+def backfill_repo(tmp_path: pathlib.Path) -> icechunk.Repository:
+    """A filesystem-backed repo with a committed `main` branch.
+
+    Backfill uses durable storage (not in_memory_storage) because a pickled
+    ForkSession cannot resolve its base snapshot from an in-memory backing.
+    """
+    chunk_store = icechunk.local_filesystem_store(CHUNK_DIR)
+    storage = icechunk.local_filesystem_storage(str(tmp_path / "repo"))
+    config = icechunk.RepositoryConfig.default()
+    config.set_virtual_chunk_container(
+        icechunk.VirtualChunkContainer(CHUNK_DIRECTORY_URL_PREFIX, chunk_store)
+    )
+    repo = icechunk.Repository.open_or_create(
+        storage=storage,
+        config=config,
+        authorize_virtual_chunk_access={
+            CHUNK_DIRECTORY_URL_PREFIX: icechunk.credentials.LocalFileSystemAccess
+        },
+    )
+    session = repo.writable_session("main")
+    zarr.open_group(session.store, mode="a").create_group("placeholder")
+    session.commit("init main")
+    return repo

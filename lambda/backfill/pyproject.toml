@@ -1,0 +1,27 @@
+[project]
+name = "backfill-handlers"
+version = "0.1.0"
+description = "Backfill Lambda handlers"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-lambda-powertools>=2.30.0",
+    "aws-xray-sdk",
+    "boto3>=1.34.0",
+    "icechunk>=2.1",
+    "virtualizarr-processor",
+]
+
+# NB: no [tool.uv.sources] for virtualizarr-processor here. backfill-handlers is a
+# uv workspace member (the root depends on it for tests) and the root already pins
+# virtualizarr-processor as an editable path source for local dev. Re-declaring it
+# here makes uv see conflicting URLs for the same package. The Lambda image instead
+# installs both local paths explicitly and non-editably in the Dockerfile, so the
+# processor's real files (not an editable .pth link to the build stage) land in
+# /var/task.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backfill_handlers"]

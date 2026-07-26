@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 import icechunk
-from icechunk import Repository, Session
+from icechunk import ForkSession, Repository, Session
 
 
 @runtime_checkable
@@ -67,6 +67,66 @@ class VirtualizarrProcessor(Protocol):
         -------
         str
             A snapshot id of the append commit.
+        """
+        ...
+
+    def initialize_backfill_store(self, repo: Repository) -> str:
+        """
+        Create the `backfill` branch off the current `main` tip and build the
+        full-shape array(s) and coordinates (metadata only), commit, and return
+        the base snapshot id.
+
+        The store is declared at its full extent up front because backfill writes
+        disjoint regions via region writes rather than appending. It also writes
+        the coordinate arrays (e.g. `time`) that region writes rely on to align
+        each per-file virtual dataset to the correct position. The session MUST
+        have no uncommitted changes after this returns, so that forks taken from
+        a fresh session share the committed branch-tip snapshot as their base.
+
+        The `backfill` branch must not already exist. This method is intended to
+        be called exactly once per backfill run.
+
+        Parameters
+        ----------
+            repo: An Icechunk Repository (durable storage; not in-memory).
+        Returns
+        -------
+        str
+            The base snapshot id of the committed full-shape store.
+        """
+        ...
+
+    def open_backfill_repo(self) -> Repository:
+        """
+        Open (or create) the durable backfill repository.
+
+        Storage is chosen by the implementation (e.g. S3 in a deployed Lambda,
+        local filesystem in tests). Must use durable, shared storage — a pickled
+        ForkSession cannot resolve its base snapshot from in-memory storage.
+        Uses open_or_create semantics so the `main` branch exists for
+        initialize_backfill_store to branch off.
+
+        Returns
+        -------
+        Repository
+            An Icechunk Repository backed by durable storage.
+        """
+        ...
+
+    def process_backfill_file(self, file_key: str, fork: ForkSession) -> bool:
+        """
+        Write a per-file virtual dataset into the fork's store via
+        `vz.to_icechunk(store, region="auto")`, which aligns the dataset to its
+        target position by coordinate. Must NOT commit.
+
+        Parameters
+        ----------
+            file_key: The full key path to the source file.
+            fork: An Icechunk ForkSession to write references into.
+        Returns
+        -------
+        bool
+            True if the file was successfully processed.
         """
         ...
 
