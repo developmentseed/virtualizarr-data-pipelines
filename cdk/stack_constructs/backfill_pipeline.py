@@ -1,6 +1,6 @@
 from typing import Any
 
-from aws_cdk import Aws, Duration
+from aws_cdk import Duration
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lmb
@@ -29,7 +29,8 @@ class BackfillPipeline(Construct):
         construct_id: str,
         *,
         icechunk_bucket: s3.IBucket,
-        icechunk_prefix: str | None,
+        icechunk_prefix: str | None = None,
+        icechunk_region: str | None = None,
         data_bucket_name: str,
         earthdata_secret_arn: str | None = None,
         partition_size: int,
@@ -44,8 +45,9 @@ class BackfillPipeline(Construct):
         # keys when set so synth doesn't inject a None value.
         env = {
             "ICECHUNK_BUCKET": icechunk_bucket.bucket_name,
-            "ICECHUNK_REGION": Aws.REGION,
         }
+        if icechunk_region:
+            env["ICECHUNK_REGION"] = icechunk_region
         if icechunk_prefix:
             env["ICECHUNK_PREFIX"] = icechunk_prefix
         if earthdata_secret_arn:

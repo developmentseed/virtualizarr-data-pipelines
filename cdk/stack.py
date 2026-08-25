@@ -102,10 +102,14 @@ class VirtualizarrSqsStack(Stack):
         # Shared processor env: resolved by virtualizarr_processor at runtime to
         # open the icechunk store (ICECHUNK_BUCKET set => S3) and to read protected
         # GES DISC granules via Earthdata (EARTHDATA_SECRET_ARN).
+        # Only include env keys when set so synth doesn't inject a None value,
+        # and so an unset ICECHUNK_REGION leaves the region to icechunk rather
+        # than pinning the bucket to the region this stack deploys into.
         self.processor_env = {
             "ICECHUNK_BUCKET": self.icechunk_bucket.bucket_name,
-            "ICECHUNK_REGION": settings.ACCOUNT_REGION,
         }
+        if settings.ICECHUNK_REGION:
+            self.processor_env["ICECHUNK_REGION"] = settings.ICECHUNK_REGION
         if settings.ICECHUNK_PREFIX:
             self.processor_env["ICECHUNK_PREFIX"] = settings.ICECHUNK_PREFIX
         if settings.EARTHDATA_SECRET_ARN:
@@ -299,6 +303,7 @@ class VirtualizarrSqsStack(Stack):
                 "BackfillPipeline",
                 icechunk_bucket=self.icechunk_bucket,
                 icechunk_prefix=settings.ICECHUNK_PREFIX,
+                icechunk_region=settings.ICECHUNK_REGION,
                 data_bucket_name=settings.DATA_BUCKET_NAME,
                 partition_size=settings.BACKFILL_PARTITION_SIZE,
                 max_items_per_batch=settings.BACKFILL_MAX_ITEMS_PER_BATCH,
