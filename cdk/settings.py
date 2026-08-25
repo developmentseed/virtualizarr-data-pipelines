@@ -60,6 +60,16 @@ class StackSettings(BaseSettings):
 
     # Backfill (partitioned fork/merge) pipeline
     BACKFILL_ENABLED: bool = False
+    # Bucket for backfill artifacts: the inventory, the partition manifests and
+    # the pickled forks. Separate from the Icechunk bucket because
+    # StepFunctions' S3JsonItemReader takes no region and assumes the stack's
+    # own, so it cannot read manifests out of a bucket in another region. A
+    # bucket this stack creates is always in-region; adopt an existing one with
+    # BACKFILL_BUCKET only if you know it is local to the deployment.
+    # S3 bucket names are globally unique, so BACKFILL_BUCKET_NAME has to be
+    # changed from its default for a fresh deploy to succeed.
+    BACKFILL_BUCKET_NAME: str = "backfill-artifacts"
+    BACKFILL_BUCKET: str | None = None
     BACKFILL_PARTITION_SIZE: int = 500
     BACKFILL_MAX_ITEMS_PER_BATCH: int = 10
     BACKFILL_MAX_CONCURRENCY: int = 50
