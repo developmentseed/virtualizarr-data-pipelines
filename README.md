@@ -95,6 +95,10 @@ Backfill is configured through the same [settings module](./cdk/settings.py) / `
 - **BACKFILL_MAX_ITEMS_PER_BATCH** (default `10`) — number of file keys processed by each worker Lambda (the inner Distributed Map's batch size). Each batch becomes one child fork.  Keep Lambda timeout limits in mind when configuring this.
 - **BACKFILL_MAX_CONCURRENCY** (default `50`) — maximum number of worker Lambdas running in parallel within a partition.  Note that if you are using dependent rate limited APIs like NASA EDL use appropriate settings here to avoid service throttling.
 - **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store and the per-run fork artifacts.
+- **ICECHUNK_REGION** - the region of the Icechunk bucket. Only needed when that
+  bucket is not in the region the stack deploys into; left unset, icechunk
+  resolves the region from the running handler rather than having the deploy
+  region baked in.
 - **DATA_BUCKET_NAME** - the source bucket workers read files from.
 
 #### Running Backfill Processing
@@ -139,6 +143,10 @@ The `processor` protocol methods below drive **forward processing**:
 
 #### Forward Processing Configuration
 - **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store and the per-run fork artifacts.
+- **ICECHUNK_REGION** - the region of the Icechunk bucket. Only needed when that
+  bucket is not in the region the stack deploys into; left unset, icechunk
+  resolves the region from the running handler rather than having the deploy
+  region baked in.
 - **DATA_BUCKET_NAME** - the source bucket workers read files from.
 - **SNS_TOPIC** - the SNS topic ARN for the data bucket to subscribe to
   notifications for newly published files.
