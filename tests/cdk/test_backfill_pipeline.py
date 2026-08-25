@@ -12,10 +12,12 @@ def _template() -> Template:
         env=cdk.Environment(account="111111111111", region="us-east-1"),
     )
     bucket = s3.Bucket(stack, "IceBucket")
+    artifacts = s3.Bucket(stack, "BackfillBucket")
     BackfillPipeline(
         stack,
         "Backfill",
         icechunk_bucket=bucket,
+        backfill_bucket=artifacts,
         data_bucket_name="my-data-bucket",
         partition_size=500,
         max_items_per_batch=10,
@@ -70,10 +72,12 @@ def _state_machine_asl() -> str:
         env=cdk.Environment(account="111111111111", region="us-east-1"),
     )
     bucket = s3.Bucket(stack, "IceBucket")
+    artifacts = s3.Bucket(stack, "BackfillBucket")
     BackfillPipeline(
         stack,
         "Backfill",
         icechunk_bucket=bucket,
+        backfill_bucket=artifacts,
         data_bucket_name="my-data-bucket",
         partition_size=500,
         max_items_per_batch=10,

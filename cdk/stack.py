@@ -95,8 +95,7 @@ class VirtualizarrSqsStack(Stack):
             self,
             "IcechunkBucketName",
             value=self.icechunk_bucket.bucket_name,
-            description="Icechunk store bucket. Upload the backfill inventory here "
-            "(the partition Lambda has read access to this bucket).",
+            description="Icechunk store bucket.",
         )
 
         # Shared processor env: resolved by virtualizarr_processor at runtime to
@@ -298,10 +297,34 @@ class VirtualizarrSqsStack(Stack):
             )
 
         if settings.BACKFILL_ENABLED:
+            if settings.BACKFILL_BUCKET:
+                self.backfill_bucket = s3.Bucket.from_bucket_name(
+                    self,
+                    "BackfillArtifactsBucket",
+                    bucket_name=settings.BACKFILL_BUCKET,
+                )
+            else:
+                self.backfill_bucket = s3.Bucket(
+                    self,
+                    "BackfillArtifactsBucket",
+                    bucket_name=settings.BACKFILL_BUCKET_NAME,
+                )
+
+            CfnOutput(
+                self,
+                "BackfillBucketName",
+                value=self.backfill_bucket.bucket_name,
+                description="Backfill artifacts bucket. Upload the backfill "
+                "inventory here: it holds the partition manifests and forks, and "
+                "is in the stack's region, which the Step Functions item reader "
+                "requires.",
+            )
+
             self.backfill_pipeline = BackfillPipeline(
                 self,
                 "BackfillPipeline",
                 icechunk_bucket=self.icechunk_bucket,
+                backfill_bucket=self.backfill_bucket,
                 icechunk_prefix=settings.ICECHUNK_PREFIX,
                 icechunk_region=settings.ICECHUNK_REGION,
                 data_bucket_name=settings.DATA_BUCKET_NAME,

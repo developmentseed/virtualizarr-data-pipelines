@@ -94,11 +94,21 @@ Backfill is configured through the same [settings module](./cdk/settings.py) / `
   partition becomes one merged commit.
 - **BACKFILL_MAX_ITEMS_PER_BATCH** (default `10`) — number of file keys processed by each worker Lambda (the inner Distributed Map's batch size). Each batch becomes one child fork.  Keep Lambda timeout limits in mind when configuring this.
 - **BACKFILL_MAX_CONCURRENCY** (default `50`) — maximum number of worker Lambdas running in parallel within a partition.  Note that if you are using dependent rate limited APIs like NASA EDL use appropriate settings here to avoid service throttling.
-- **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store and the per-run fork artifacts.
+- **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store.
 - **ICECHUNK_REGION** - the region of the Icechunk bucket. Only needed when that
   bucket is not in the region the stack deploys into; left unset, icechunk
   resolves the region from the running handler rather than having the deploy
   region baked in.
+- **BACKFILL_BUCKET_NAME** - the name of the S3 bucket to create for backfill
+  artifacts: the inventory, the partition manifests and the per-run forks. S3
+  bucket names are globally unique, so this has to be set to something of your
+  own for a fresh deploy to succeed. The bucket is created only when
+  `BACKFILL_ENABLED`.
+- **BACKFILL_BUCKET** - use an existing bucket for those artifacts instead of
+  creating one. It must be in the region the stack deploys into: the Step
+  Functions item reader that reads partition manifests takes no region and
+  assumes the stack's own. This is why the artifacts do not live in the
+  Icechunk bucket, which `ICECHUNK_REGION` explicitly allows to be elsewhere.
 - **DATA_BUCKET_NAME** - the source bucket workers read files from.
 
 #### Running Backfill Processing
@@ -108,7 +118,10 @@ To start backfill processing run:
 ```
 Where `execution-name` is a unique id to identify your Step Function run and
 `inventory-uri` is an s3 path to `json` file containing an array of string keys
-for the files to be processed.  The inventory file must be in a bucket that the backfill lambda functions have permission to access.
+for the files to be processed.  Upload it to the backfill artifacts bucket
+(the `BackfillBucketName` stack output): the partition Lambda reads it with a
+client in the stack's own region, so an inventory in a bucket in another region
+cannot be read.
 
 
 ### Forward Processing :arrow_forward:
@@ -142,7 +155,7 @@ The `processor` protocol methods below drive **forward processing**:
   processing modes and is invoked on the schedule set by `GARBAGE_COLLECTION_FREQUENCY`.
 
 #### Forward Processing Configuration
-- **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store and the per-run fork artifacts.
+- **ICECHUNK_BUCKET_NAME** - the name for the S3 bucket to create holding the Icechunk store.
 - **ICECHUNK_REGION** - the region of the Icechunk bucket. Only needed when that
   bucket is not in the region the stack deploys into; left unset, icechunk
   resolves the region from the running handler rather than having the deploy
