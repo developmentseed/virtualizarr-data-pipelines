@@ -35,10 +35,14 @@ def process_notification(
     if key and bucket:
         s3_uri = f"s3://{bucket}/{key}"
         logger.info(
-            "Append file",
+            "Process file",
             extra={"bucket": bucket, "key": key, "s3_uri": s3_uri},
         )
-        processor.process_file(file_key=key, session=session)
+        # A processor may report failure either by raising or by returning
+        # False; both have to fail the record so the message is retried rather
+        # than dropped, the same way the backfill worker treats its own result.
+        if not processor.process_file(file_key=key, session=session):
+            raise RuntimeError(f"process_file failed for {s3_uri}")
         logger.info(f"{s3_uri} successfully processed")
 
 

@@ -124,3 +124,24 @@ def test_handler_fails_all_on_commit_error(MockProcessor: MagicMock) -> None:
     failed_ids = [item["itemIdentifier"] for item in response["batchItemFailures"]]
     assert "msg-000" in failed_ids
     assert "msg-001" in failed_ids
+
+
+@patch("process_messages.handler.Processor")
+def test_handler_fails_the_record_when_process_file_returns_false(
+    MockProcessor: MagicMock,
+) -> None:
+    """A processor that reports failure by returning False rather than raising
+    must still leave the message on the queue, not be logged as a success."""
+    mock_processor = MockProcessor.return_value
+    mock_processor.initialize_repo.return_value = MagicMock()
+    mock_processor.initialize_session.return_value = MagicMock()
+    mock_processor.process_file.side_effect = [True, False]
+    mock_processor.commit_processed_files.return_value = "snapshot-123"
+
+    event = make_sqs_event(["2024-01-02", "bad-key"])
+    context = MagicMock()
+
+    response = handler(event, context)
+
+    failed_ids = [item["itemIdentifier"] for item in response["batchItemFailures"]]
+    assert failed_ids == ["msg-001"]

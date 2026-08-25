@@ -3,62 +3,12 @@ import pathlib
 import tempfile
 
 import icechunk
-import numpy as np
-import obstore
 import pytest
-import xarray as xr
 import zarr
-from virtualizarr.manifests import ChunkManifest, ManifestArray
-from zarr.codecs import BytesCodec
-from zarr.core.dtype import parse_data_type
-from zarr.core.metadata import ArrayV3Metadata
+from virtualizarr_processor.processor import synthetic_vds
 
 CHUNK_DIR = os.path.realpath(tempfile.gettempdir())
 CHUNK_DIRECTORY_URL_PREFIX = f"file://{CHUNK_DIR}/"
-
-
-def fake_vds(date: str) -> xr.Dataset:
-    filepath = f"{CHUNK_DIR}/data_chunk"
-    store = obstore.store.LocalStore()
-    arr = np.repeat([[1, 2]], 3, axis=1)
-    shape = arr.shape
-    dtype = arr.dtype
-    buf = arr.tobytes()
-    obstore.put(
-        store,
-        filepath,
-        buf,
-    )
-    manifest = ChunkManifest(
-        {"0.0": {"path": filepath, "offset": 0, "length": len(buf)}}
-    )
-    zdtype = parse_data_type(dtype, zarr_format=3)
-    metadata = ArrayV3Metadata(
-        shape=shape,
-        data_type=zdtype,
-        chunk_grid={
-            "name": "regular",
-            "configuration": {"chunk_shape": shape},
-        },
-        chunk_key_encoding={"name": "default"},
-        fill_value=zdtype.default_scalar(),
-        codecs=[BytesCodec()],
-        attributes={},
-        dimension_names=("y", "x"),
-        storage_transformers=None,
-    )
-    ma = ManifestArray(
-        chunkmanifest=manifest,
-        metadata=metadata,
-    )
-    foo = xr.Variable(data=ma, dims=["y", "x"], encoding={"scale_factor": 2})
-    vds = xr.Dataset(
-        {"foo": foo},
-        coords={
-            "time": ("time", [np.datetime64(date)])  # Single time point
-        },
-    )
-    return vds
 
 
 def create_repo() -> icechunk.Repository:
@@ -81,7 +31,7 @@ def create_repo() -> icechunk.Repository:
 def create_session() -> icechunk.Session:
     repo = create_repo()
     session = repo.writable_session("main")
-    vds = fake_vds("2024-01-01")
+    vds = synthetic_vds("2024-01-01")
     vds.vz.to_icechunk(session.store, validate_containers=False)
     return session
 

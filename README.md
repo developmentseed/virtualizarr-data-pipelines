@@ -102,7 +102,7 @@ Forward processing handles **new production files as they become available**.
 It uses an SQS queue to receive notifications about new files and control the
 rate of processing.
 
-Each message is a file to parse and append to the `main` branch, and the queue consumer
+Each message is a file to parse and write to the `main` branch, and the queue consumer
 Lambda commits once per batch of files (the number of file messages sent to a single
 Lambda invocation is controlled by `SQS_BATCH_SIZE`.
 
@@ -119,6 +119,26 @@ The `processor` protocol methods below drive **forward processing**:
   a writable Icechunk session.
 
 - **process_file** This method should take a file uri and a session and use a Virtualizarr parser to parse it and add the resulting ManifestStore or virtual dataset to the Icechunk store.
+
+  The write is not always an append. A store declared at its full extent up
+  front -- the normal state after a backfill -- already holds a row for every
+  coordinate inside that extent, and a re-delivered notification is a file the
+  store already carries. Appending either of those adds a second row with the
+  same coordinate value, leaving the axis non-monotonic and the file stored
+  twice, so they have to be written in place with `region="auto"`. Only a
+  coordinate past the end of the axis is an append, and only an absent array is
+  a create.
+
+  How the choice is made is left to your implementation rather than expressed
+  as extra protocol methods, because reshaping a dataset for a region write
+  depends on the dataset: variables that do not carry the append dimension
+  (static grid coordinates, say) have to be dropped, since `region="auto"` has
+  no slice to resolve for them. The reference implementation's
+  `store_append_dimension` and `write_plan` in
+  [processor.py](./lambda/virtualizarr-processor/virtualizarr_processor/processor.py)
+  are a worked example: read the axis the store already holds, compare this
+  file's coordinate against it, and return the mode with the `to_icechunk`
+  keyword arguments that go with it.
 
 - **commit_processed_files** This method commits all the changes made during the
   session in a single commit.

@@ -45,6 +45,21 @@ class VirtualizarrProcessor(Protocol):
         Uses a Virtualizarr parser to parse the file, manipulate the resulting
         ManifestStore and add it to the Icechunk store
 
+        The write is not always an append. A store declared at its full extent
+        up front -- the normal state after a backfill -- already holds a
+        (possibly empty) row for every coordinate inside that extent, and a
+        re-delivered notification is a file the store already carries. Appending
+        either of those adds a second row with the same coordinate value,
+        leaving the axis non-monotonic and the file stored twice; they have to
+        be written in place with `region="auto"` instead. Only a coordinate past
+        the end of the axis is an append, and only an absent array is a create.
+
+        Choosing between the three is left to the implementation rather than
+        expressed as separate Protocol methods, because how a dataset is
+        reshaped for a region write depends on the dataset. The reference
+        implementation's `write_plan` and `store_append_dimension` in
+        `virtualizarr_processor.processor` are a worked example.
+
         Parameters
         ----------
             file_key: The full key path to the source file.
@@ -66,7 +81,7 @@ class VirtualizarrProcessor(Protocol):
         Returns
         -------
         str
-            A snapshot id of the append commit.
+            A snapshot id of the commit.
         """
         ...
 
