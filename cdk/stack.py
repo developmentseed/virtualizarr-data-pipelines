@@ -170,6 +170,12 @@ class VirtualizarrSqsStack(Stack):
 
         self.icechunk_bucket.grant_read_write(self.process_messages_lambda)
 
+        # Partial batch reporting is required, and load-bearing: the handler
+        # returns a failure list only after its commit has succeeded, so the
+        # records it omits really are stored. Without this flag Lambda ignores
+        # that list and deletes the failed messages along with the rest. A
+        # failed commit is signalled by raising instead, which fails the
+        # invocation and redelivers the whole batch.
         self.process_messages_lambda.add_event_source(
             lambda_event_sources.SqsEventSource(
                 self.queue,

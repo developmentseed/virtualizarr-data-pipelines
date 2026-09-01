@@ -1,20 +1,48 @@
+"""Forward ingest: a batch is one Icechunk commit, with two failure modes.
+
+Every record in a batch writes into a single shared session, and nothing is
+durable until that session commits at the end. That asymmetry decides how each
+kind of failure is reported:
+
+* **one file fails** -- the rest of the batch still commits, so those files are
+  genuinely stored and only the failed message needs to come back. It is
+  returned as a batch item failure, and SQS redelivers just that one.
+* **the commit fails** -- nothing is durable, including the files that wrote
+  without complaint. The handler raises, Lambda records the invocation as
+  failed, and SQS redelivers every message in the batch.
+
+The ordering is what makes the first case honest: the failure list is only ever
+returned *after* a successful commit. Reporting per-record success before the
+commit would delete messages for files that were never stored, which is what an
+earlier version of this handler did.
+
+A redelivered batch re-runs against a fresh session, which is safe because
+`write_plan` recomputes each cycle's placement from the axis it finds: a cycle
+another invocation has since written comes back as a region write, not an append.
+"""
+
 import json
 from typing import Any, Dict
 
 from aws_lambda_powertools import Logger, Tracer
-from aws_lambda_powertools.utilities.batch import (
-    BatchProcessor,
-    EventType,
+from aws_lambda_powertools.logging import utils
+from aws_lambda_powertools.utilities.batch.types import (
+    PartialItemFailureResponse,
+    PartialItemFailures,
 )
-from aws_lambda_powertools.utilities.batch.types import PartialItemFailureResponse
-from aws_lambda_powertools.utilities.data_classes import SQSEvent, SQSRecord
+from aws_lambda_powertools.utilities.data_classes import SQSEvent
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from icechunk import Session
 from virtualizarr_processor.processor import Processor
 
 logger = Logger()
 tracer = Tracer()
-batch_processor = BatchProcessor(event_type=EventType.SQS)
+
+# The processor reports a per-file failure by returning False and logging the
+# real cause through its own module logger, which is not in Powertools'
+# structured format by default and is easy to miss. Adopting it here puts those
+# tracebacks in the same JSON stream as everything else.
+utils.copy_config_to_registered_loggers(source_logger=logger)
 
 
 @tracer.capture_method
@@ -23,99 +51,98 @@ def process_notification(
     session: Session,
     processor: Processor,
 ) -> None:
-    """
-    Process a notification message.
-
-    Args:
-        message: The notification message to process
-    """
-    # Extract key information from the message
+    """Write the file named by one S3 notification into the shared session."""
     bucket = message.get("Records", [{}])[0].get("s3", {}).get("bucket", {}).get("name")
     key = message.get("Records", [{}])[0].get("s3", {}).get("object", {}).get("key")
-    if key and bucket:
-        s3_uri = f"s3://{bucket}/{key}"
-        logger.info(
-            "Process file",
-            extra={"bucket": bucket, "key": key, "s3_uri": s3_uri},
-        )
-        # A processor may report failure either by raising or by returning
-        # False; both have to fail the record so the message is retried rather
-        # than dropped, the same way the backfill worker treats its own result.
-        if not processor.process_file(file_key=key, session=session):
-            raise RuntimeError(f"process_file failed for {s3_uri}")
-        logger.info(f"{s3_uri} successfully processed")
+    if not (key and bucket):
+        logger.warning("Notification carried no S3 object; nothing to write")
+        return
+
+    s3_uri = f"s3://{bucket}/{key}"
+    logger.info("Process file", extra={"bucket": bucket, "key": key, "s3_uri": s3_uri})
+
+    # `process_file` reports failure by returning False rather than raising, so
+    # that has to be turned back into an exception here -- otherwise the batch
+    # carries on and commits as though the file had been written.
+    if not processor.process_file(file_key=key, session=session):
+        raise RuntimeError(f"process_file failed for {s3_uri}; see the traceback above")
+    logger.info("Wrote file into the pending commit", extra={"s3_uri": s3_uri})
 
 
 @logger.inject_lambda_context()
 @tracer.capture_lambda_handler
 def handler(event: Any, context: LambdaContext) -> PartialItemFailureResponse:
-    """
-    Lambda function to process notification messages from SQS queue.
+    """Write every file in the batch, commit once, then report what failed."""
+    # Inside the try from the first line: opening the repo is where a
+    # misconfigured deployment fails -- no ICECHUNK_BUCKET, no permission on it,
+    # a store that cannot be created -- and an exception raised before the first
+    # structured line leaves nothing behind but the runtime's plain-text
+    # traceback, which is invisible to anything filtering these logs by level.
+    try:
+        sqs_event = SQSEvent(event)
+        processor = Processor()
+        session = processor.initialize_session(repo=processor.initialize_repo())
+        records = list(sqs_event.records)
+    except Exception:
+        logger.exception("Could not open the store; the batch returns to the queue")
+        raise
 
-    Args:
-        event: Lambda event containing SQS records
-        context: Lambda context object
+    failures: list[PartialItemFailures] = []
 
-    """
-    sqs_event = SQSEvent(event)
-    records = sqs_event.raw_event["Records"]
-    virtualizarr_processor = Processor()
-    repo = virtualizarr_processor.initialize_repo()
-    session = virtualizarr_processor.initialize_session(repo=repo)
-
-    @tracer.capture_method
-    def record_handler(record: SQSRecord) -> None:
-        """
-        Process individual SQS record.
-
-        Args:
-            record: SQS record from the batch
-        """
+    for record in records:
         try:
-            # Extract message body
-            message_body = record.body
-
-            # Parse the SNS message if it's from SNS
-            message = json.loads(message_body)
-
-            # If message is from SNS, extract the actual message
+            message = json.loads(record.body)
+            # Unwrap the SNS envelope when the queue is subscribed to a topic.
             if "Message" in message:
-                sns_message = json.loads(message["Message"])
-                process_notification(
-                    message=sns_message,
-                    session=session,
-                    processor=virtualizarr_processor,
-                )
-            else:
-                # Direct SQS message
-                process_notification(
-                    message=message,
-                    session=session,
-                    processor=virtualizarr_processor,
-                )
-
-        except Exception as e:
-            logger.error(
-                f"Error processing record: {str(e)}",
+                message = json.loads(message["Message"])
+            process_notification(message=message, session=session, processor=processor)
+        except Exception:
+            # Held, not raised: the rest of the batch can still be committed,
+            # and this message is reported for redelivery once it has been.
+            logger.exception(
+                "File failed; its message will be returned to the queue",
                 extra={"message_id": record.message_id},
             )
-            raise
+            failures.append({"itemIdentifier": record.message_id})
 
-    # Process each record individually
-    with batch_processor(records=records, handler=record_handler) as batch:
-        batch.process()
-    # Now attempt the commit:
+    if not session.has_uncommitted_changes:
+        # Nothing reached the store. There is no commit to make, and Icechunk
+        # would refuse an empty one anyway, so raise rather than report failures
+        # piecemeal -- every message in the batch has to come back.
+        if failures:
+            # Each failure already logged its own cause above; this line records
+            # the batch-level outcome in the same structured stream, so the
+            # reason the invocation died is not left to Lambda's plain-text
+            # unhandled-exception output.
+            logger.error(
+                "No file in this batch could be written; returning the whole batch",
+                extra={"failed": len(failures), "records": len(records)},
+            )
+            raise RuntimeError(
+                f"no file in this batch could be written "
+                f"({len(failures)} of {len(records)} failed); returning the batch"
+            )
+        logger.info("Batch carried no writable files; nothing to commit")
+        return {"batchItemFailures": []}
+
     try:
-        snapshot_id = virtualizarr_processor.commit_processed_files(session=session)
-        logger.info(f"Committed to {snapshot_id}")
+        snapshot_id = processor.commit_processed_files(session=session)
     except Exception:
-        logger.error("Commit failed, marking all records as failed")
-        return {
-            "batchItemFailures": [
-                {"itemIdentifier": record["messageId"]} for record in records
-            ]
-        }
+        # Raised, not reported: without the commit even the files that wrote
+        # cleanly are not stored, so the whole batch must be redelivered.
+        logger.exception(
+            "Commit failed; nothing was stored and every message returns to the queue"
+        )
+        raise
 
-    # Commit succeeded — return normal partial failure response
-    # (only individually-failed records retry)
-    return batch_processor.response()
+    logger.info(
+        "Committed batch",
+        extra={
+            "snapshot_id": snapshot_id,
+            "written": len(records) - len(failures),
+            "failed": len(failures),
+        },
+    )
+    # Only reachable once the commit has succeeded, which is what makes it safe
+    # to let the records that are not listed here be deleted.
+    return {"batchItemFailures": failures}

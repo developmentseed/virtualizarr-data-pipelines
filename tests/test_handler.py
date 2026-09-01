@@ -1,10 +1,17 @@
+"""Forward handler: a batch is one commit, with two distinct failure modes.
+
+The contract these pin down is the ordering. A per-file failure is reported to
+SQS only *after* the commit has succeeded, so the records left off the failure
+list really are stored. A commit failure is raised instead, because then nothing
+is stored and the whole batch has to come back.
+"""
+
 import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aws_lambda_powertools.utilities.batch.exceptions import BatchProcessingError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lambda"))
 
@@ -45,103 +52,120 @@ def make_sqs_event(keys: list[str], bucket: str = "test-bucket") -> dict:
     return {"Records": records}
 
 
-@patch("process_messages.handler.Processor")
-def test_handler_processes_all_records(MockProcessor: MagicMock) -> None:
-    mock_processor = MockProcessor.return_value
-    mock_repo = MagicMock()
-    mock_session = MagicMock()
-    mock_processor.initialize_repo.return_value = mock_repo
-    mock_processor.initialize_session.return_value = mock_session
-    mock_processor.process_file.return_value = True
-    mock_processor.commit_processed_files.return_value = "snapshot-123"
-
-    event = make_sqs_event(["2024-01-02", "2024-01-03"])
-    context = MagicMock()
-
-    response = handler(event, context)
-
-    # No failures expected
-    assert response["batchItemFailures"] == []
-
-    # Verify process_file was called for each record
-    assert mock_processor.process_file.call_count == 2
-    calls = mock_processor.process_file.call_args_list
-    assert calls[0].kwargs["file_key"] == "2024-01-02"
-    assert calls[1].kwargs["file_key"] == "2024-01-03"
-
-    # Verify commit was called once
-    mock_processor.commit_processed_files.assert_called_once_with(session=mock_session)
+def make_processor(MockProcessor: MagicMock) -> MagicMock:
+    processor = MockProcessor.return_value
+    processor.initialize_repo.return_value = MagicMock()
+    session = MagicMock()
+    session.has_uncommitted_changes = True
+    processor.initialize_session.return_value = session
+    processor.process_file.return_value = True
+    processor.commit_processed_files.return_value = "snapshot-123"
+    return processor
 
 
 @patch("process_messages.handler.Processor")
-def test_handler_raises_when_entire_batch_fails(MockProcessor: MagicMock) -> None:
-    """If all records fail, BatchProcessor raises BatchProcessingError."""
-    mock_processor = MockProcessor.return_value
-    mock_processor.initialize_repo.return_value = MagicMock()
-    mock_processor.initialize_session.return_value = MagicMock()
-    mock_processor.process_file.side_effect = Exception("Processing failed")
-
-    event = make_sqs_event(["bad-key"])
-    context = MagicMock()
-
-    with pytest.raises(BatchProcessingError):
-        handler(event, context)
-
-
-@patch("process_messages.handler.Processor")
-def test_handler_partial_failure(MockProcessor: MagicMock) -> None:
-    """If some records fail, only those appear in batchItemFailures."""
-    mock_processor = MockProcessor.return_value
-    mock_processor.initialize_repo.return_value = MagicMock()
-    mock_processor.initialize_session.return_value = MagicMock()
-    mock_processor.process_file.side_effect = [True, Exception("Processing failed")]
-    mock_processor.commit_processed_files.return_value = "snapshot-123"
-
-    event = make_sqs_event(["2024-01-02", "bad-key"])
-    context = MagicMock()
-
-    response = handler(event, context)
-
-    failed_ids = [item["itemIdentifier"] for item in response["batchItemFailures"]]
-    assert "msg-001" in failed_ids
-    assert "msg-000" not in failed_ids
-
-
-@patch("process_messages.handler.Processor")
-def test_handler_fails_all_on_commit_error(MockProcessor: MagicMock) -> None:
-    """If commit fails, all records should be marked as failed."""
-    mock_processor = MockProcessor.return_value
-    mock_processor.initialize_repo.return_value = MagicMock()
-    mock_processor.initialize_session.return_value = MagicMock()
-    mock_processor.process_file.return_value = True
-    mock_processor.commit_processed_files.side_effect = Exception("Commit failed")
-
-    event = make_sqs_event(["2024-01-02", "2024-01-03"])
-    context = MagicMock()
-
-    response = handler(event, context)
-
-    failed_ids = [item["itemIdentifier"] for item in response["batchItemFailures"]]
-    assert "msg-000" in failed_ids
-    assert "msg-001" in failed_ids
-
-
-@patch("process_messages.handler.Processor")
-def test_handler_fails_the_record_when_process_file_returns_false(
+def test_a_batch_that_writes_and_commits_reports_no_failures(
     MockProcessor: MagicMock,
 ) -> None:
-    """A processor that reports failure by returning False rather than raising
-    must still leave the message on the queue, not be logged as a success."""
-    mock_processor = MockProcessor.return_value
-    mock_processor.initialize_repo.return_value = MagicMock()
-    mock_processor.initialize_session.return_value = MagicMock()
-    mock_processor.process_file.side_effect = [True, False]
-    mock_processor.commit_processed_files.return_value = "snapshot-123"
+    processor = make_processor(MockProcessor)
 
-    event = make_sqs_event(["2024-01-02", "bad-key"])
-    context = MagicMock()
+    response = handler(make_sqs_event(["2024-01-02", "2024-01-03"]), MagicMock())
 
-    response = handler(event, context)
+    assert response == {"batchItemFailures": []}
+    assert [c.kwargs["file_key"] for c in processor.process_file.call_args_list] == [
+        "2024-01-02",
+        "2024-01-03",
+    ]
+    # one session shared across the batch, one commit at the end
+    processor.initialize_session.assert_called_once()
+    processor.commit_processed_files.assert_called_once()
 
-    failed_ids = [item["itemIdentifier"] for item in response["batchItemFailures"]]
-    assert failed_ids == ["msg-001"]
+
+@patch("process_messages.handler.Processor")
+def test_one_failed_file_returns_only_its_own_message(MockProcessor: MagicMock) -> None:
+    """The rest of the batch still commits, so those files really are stored and
+    only the failed message needs redelivering."""
+    processor = make_processor(MockProcessor)
+    processor.process_file.side_effect = [True, False, True]
+
+    response = handler(
+        make_sqs_event(["2024-01-02", "unwritable-key", "2024-01-04"]), MagicMock()
+    )
+
+    assert response == {"batchItemFailures": [{"itemIdentifier": "msg-001"}]}
+    processor.commit_processed_files.assert_called_once()
+
+
+@patch("process_messages.handler.Processor")
+def test_a_file_that_raises_is_held_rather_than_aborting_the_batch(
+    MockProcessor: MagicMock,
+) -> None:
+    processor = make_processor(MockProcessor)
+    processor.process_file.side_effect = [Exception("boom"), True]
+
+    response = handler(make_sqs_event(["bad-key", "2024-01-03"]), MagicMock())
+
+    assert response == {"batchItemFailures": [{"itemIdentifier": "msg-000"}]}
+    processor.commit_processed_files.assert_called_once()
+
+
+@patch("process_messages.handler.Processor")
+def test_a_failed_commit_fails_the_whole_invocation(MockProcessor: MagicMock) -> None:
+    """Files written into a session that never commits have not been stored.
+    Reporting failures here would delete their messages; raising redelivers
+    every one of them."""
+    processor = make_processor(MockProcessor)
+    processor.commit_processed_files.side_effect = Exception("conflict")
+
+    with pytest.raises(Exception, match="conflict"):
+        handler(make_sqs_event(["2024-01-02", "2024-01-03"]), MagicMock())
+
+
+@patch("process_messages.handler.Processor")
+def test_a_batch_where_nothing_could_be_written_fails_the_invocation(
+    MockProcessor: MagicMock,
+) -> None:
+    """There is no commit to hang a partial failure report off, and Icechunk
+    refuses an empty commit, so the batch goes back whole."""
+    processor = make_processor(MockProcessor)
+    processor.process_file.return_value = False
+    processor.initialize_session.return_value.has_uncommitted_changes = False
+
+    with pytest.raises(RuntimeError, match="no file in this batch could be written"):
+        handler(make_sqs_event(["bad-a", "bad-b"]), MagicMock())
+
+    processor.commit_processed_files.assert_not_called()
+
+
+@patch("process_messages.handler.Processor")
+def test_a_store_that_cannot_be_opened_is_logged_before_it_raises(
+    MockProcessor: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A misconfigured deployment fails here -- no bucket, no permission on it --
+    and it happens before any per-file logging. Unguarded it leaves nothing but
+    the runtime's plain-text traceback, which is invisible to a level filter."""
+    MockProcessor.return_value.initialize_repo.side_effect = KeyError(
+        "ICECHUNK_LOCAL_PATH"
+    )
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(KeyError):
+            handler(make_sqs_event(["2024-01-02"]), MagicMock())
+
+    assert "Could not open the store" in caplog.text
+
+
+@patch("process_messages.handler.Processor")
+def test_an_sns_wrapped_message_is_unwrapped(MockProcessor: MagicMock) -> None:
+    processor = make_processor(MockProcessor)
+    inner = {
+        "Records": [
+            {"s3": {"bucket": {"name": "test-bucket"}, "object": {"key": "wrapped"}}}
+        ]
+    }
+    event = make_sqs_event(["placeholder"])
+    event["Records"][0]["body"] = json.dumps({"Message": json.dumps(inner)})
+
+    handler(event, MagicMock())
+
+    assert processor.process_file.call_args.kwargs["file_key"] == "wrapped"
